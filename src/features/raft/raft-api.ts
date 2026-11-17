@@ -216,6 +216,9 @@ export type RaftApi = Awaited<ReturnType<typeof raftApi>>;
 
 export function errorMessage(error: unknown) {
   if (error instanceof RaftError) {
+    if (error.code === 'INVALID_SQL') return 'Enter a valid SQL query of at most 64 KiB.';
+    if (error.code === 'READ_ONLY_SQL_REQUIRED')
+      return 'Only read-only SQL is allowed. Edit the query and run it again.';
     if (error.status === 401) return 'Your sign-in has expired. Sign in with Raft again.';
     if (error.status === 403) return 'Your current permissions do not allow this operation.';
     if (error.status === 412) return 'This item changed. Load the latest version before saving.';

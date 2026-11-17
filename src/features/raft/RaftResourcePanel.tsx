@@ -13,7 +13,7 @@ import {
 } from '@tidbcloud/uikit';
 import { Heading } from '../../ui/WorkspaceHeading';
 const WorkspaceSqlInput = lazy(() => import('../sql/WorkspaceSqlInput'));
-import { errorMessage } from './raft-api';
+import { errorMessage, RaftError } from './raft-api';
 import type { RaftApi, RaftFile, RaftResource } from './raft-api';
 
 type Query = Awaited<ReturnType<RaftApi['query']>>;
@@ -77,11 +77,26 @@ export function RaftResourcePanel({
   }
   async function execute() {
     if (submitted) return;
+    if (!sql.trim() || new TextEncoder().encode(sql).length > 65536)
+      throw new Error('Enter a SQL query of at most 64 KiB.');
     // Retain the original key before sending SQL. Reload offers observation, never replay.
     sessionStorage.setItem(storageKey, requestId);
     setSubmitted(true);
-    const result = await api.query({ workspaceId, resourceId: resource.id, requestId, sql });
-    setQuery(result);
+    try {
+      const result = await api.query({ workspaceId, resourceId: resource.id, requestId, sql });
+      setQuery(result);
+    } catch (error) {
+      // Only these documented pre-intent rejections prove this submission did not execute.
+      if (
+        error instanceof RaftError &&
+        ((error.status === 400 && error.code === 'INVALID_SQL') ||
+          (error.status === 403 && error.code === 'READ_ONLY_SQL_REQUIRED'))
+      ) {
+        sessionStorage.removeItem(storageKey);
+        setSubmitted(false);
+      }
+      throw error;
+    }
   }
   const result = query?.result;
   const columns =

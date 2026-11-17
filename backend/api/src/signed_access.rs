@@ -191,6 +191,16 @@ impl AccessVerifier {
     /// Validates locally with a caller-supplied trusted regional clock. No policy-age lease is
     /// applied. The caller must enforce a durable anti-rollback time floor before invoking this.
     pub fn verify(&self, token: &str, now: i64) -> Result<VerifiedAccess> {
+        self.verify_profile(token, now, false)
+    }
+
+    /// Only Global federated proofs allow the declared relative clock error at admission.
+    /// Expiry is checked against the unchanged regional clock, without any grace period.
+    pub(crate) fn verify_federated(&self, token: &str, now: i64) -> Result<VerifiedAccess> {
+        self.verify_profile(token, now, true)
+    }
+
+    fn verify_profile(&self, token: &str, now: i64, federated: bool) -> Result<VerifiedAccess> {
         if token.len() > MAX_TOKEN_BYTES || now <= 0 {
             return Err(denied());
         }
@@ -221,6 +231,11 @@ impl AccessVerifier {
         let claims = decode::<AccessClaims>(token, &DecodingKey::from_ed_der(key), &validation)
             .map_err(|_| denied())?
             .claims;
+        let admission_error = if federated {
+            2 * crate::raft_auth::CLOCK_UNCERTAINTY_SECONDS
+        } else {
+            0
+        };
         if claims.iss != self.issuer
             || claims.aud != self.audience
             || claims.environment != self.environment
@@ -234,9 +249,14 @@ impl AccessVerifier {
             || claims.policy_generation == 0
             || claims.iat <= 0
             || claims.iat > claims.nbf
-            || claims.nbf > now
+            || claims.nbf > now.saturating_add(admission_error)
             || claims.exp <= now
+            || claims.exp <= claims.nbf
             || claims.exp <= claims.iat
+            || federated
+                && (!matches!(self.issuer_kind, IssuerKind::Global)
+                    || self.region.is_none()
+                    || !claims.grant_ref.starts_with("federated:"))
             || claims
                 .exp
                 .checked_sub(claims.iat)

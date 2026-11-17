@@ -8552,7 +8552,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: queries:execute for writes; queries:read for read-only SQL. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Retain requestId before sending. The ID binds this principal, Workspace, resource and request. Same content never executes twice; changed reuse is 409. Intent persists before provider submission. Lost provider response is outcomeUnknown; inspect the original request instead of creating a new ID. Results are retained encrypted, limited to 1 MiB/1,000 rows; SQL is limited to 64 KiB and 15 seconds. Request identities have no replay-enabling expiry.",
+        "description": "Required Region access Token scope: queries:execute for writes; queries:read for read-only SQL. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Retain requestId before sending. The ID binds this principal, Workspace, resource and request. Same content never executes twice; changed reuse is 409. Intent persists before provider submission. INVALID_SQL (400) and READ_ONLY_SQL_REQUIRED (403) reject before intent/provider I/O and permit correcting the SQL; all other failures require observing the original ID. Lost provider response is outcomeUnknown; inspect the original request instead of creating a new ID. Results are retained encrypted, limited to 1 MiB/1,000 rows; SQL is limited to 64 KiB and 15 seconds. Request identities have no replay-enabling expiry.",
         "operationId": "createQueryRequest",
         "requestBody": {
           "content": {

@@ -72,6 +72,11 @@ and do not claim rollback or exactly-once execution. Status/results require curr
 belong to the verified caller. Missing records never authorize replay. The service retains
 request identities and bounded results without expiry; there is no replay-enabling cleanup.
 
+`400 INVALID_SQL` and `403 READ_ONLY_SQL_REQUIRED` are definite validation rejections before
+recording an execution intent or contacting the provider. Edit the SQL and submit again after
+these responses. Other errors, including a missing status record after a lost response, do not
+prove that execution was prevented. The Console retains the original ID in those cases.
+
 SQL is limited to 64 KiB, one statement, 15 seconds, 1,000 rows and 1 MiB of results. Read-only
 permissions use the native provider's read-only enforcement. Nonempty bound-parameter arrays are
 currently rejected; do not interpolate untrusted values into SQL. Text reads are at most 128 KiB,
@@ -108,8 +113,12 @@ Raft mutating requests reject other Origins even if trusted for legacy Console o
 
 Production uses HTTPS and the existing trusted clocks/writer/floor configuration.
 Operators must keep each authority clock within five seconds of UTC. Proofs use a 50-second
-window to reserve both clock errors within the 60-second admission bound. Local clock checks
-detect rollback/health failures; they do not establish NTP synchronization. Fixture HTTP
+window to reserve both clock errors within the 60-second admission bound. First admission
+allows up to ten seconds of relative clock error for federated proofs only; expiration has
+no grace period. Legacy Key tokens retain strict not-before checks. Local clock checks
+detect rollback/checkpoint failures; they do not establish UTC synchronization or detect every
+stalled clock. This does not satisfy the full design's clock-health requirement: enablement
+requires a verified health/fencing mechanism or explicit acceptance of a revised requirement. Fixture HTTP
 is loopback-only and requires explicit test configuration. Do not enable it on a remote host.
 Each Workspace has one serving Region; active-active serving is outside this implementation.
 

@@ -58,8 +58,12 @@ Global never forwards browser cookies or impersonates a legacy Owner.
 A backend-only native signed proof binds the verified actor, Server identity stamp, Workspace,
 Region, generation, exact resource and action ceiling. A proof uses a 50-second window from
 the policy observation, reserving two declared five-second clock errors within a 60-second
-real-time admission bound. It is also capped by session and supporting grant expiry. Region independently
-checks current Raft userinfo, the identity stamp and its durable generation floor. Human-only
+real-time admission bound. It is also capped by session and supporting grant expiry. Region
+allows the declared ten-second relative clock error at first admission without extending
+expiry. This allowance applies only to Global federated proofs; legacy Key tokens remain strict.
+The bound remains conditional on operator clock synchronization; full clock-health fencing is
+not implemented and must be resolved before enabling this capability.
+Region independently checks current Raft userinfo, the identity stamp and its durable generation floor. Human-only
 metadata/creation proofs have separate fixed purposes and routes; their wildcard is never a
 data grant. The data path issues one exact-resource proof and cannot combine rights across IDs.
 

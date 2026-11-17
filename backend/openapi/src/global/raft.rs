@@ -127,7 +127,7 @@ pub(super) fn paths() -> Value {
         "/api/raft/actions/context":{"get":context},
         "/api/raft/actions/list-resources":{"get":inventory},
         "/api/raft/actions/read-file":{"get":read},
-        "/api/raft/actions/query":{"post":mutation("raftQuery","Submit SQL with a retained request UUID; never retry uncertain writes with a new ID",reference("RaftQueryInput"),reference("RaftQuery"))},
+        "/api/raft/actions/query":{"post":mutation("raftQuery","Submit SQL with a retained request UUID; INVALID_SQL (400) and READ_ONLY_SQL_REQUIRED (403) reject before execution; other errors require observing the original ID",reference("RaftQueryInput"),reference("RaftQuery"))},
         "/api/raft/actions/query-status":{"get":status},
         "/api/raft/workspaces":{"get":extend(operation("raftWorkspaces","List current own Workspaces",page(reference("RaftWorkspace"))),json!({"parameters":[parameter("cursor","query",false)]})),"post":workspaces},
         "/api/raft/workspaces/{workspaceId}":{"parameters":[path_workspace()],"get":operation("raftWorkspace","Read current membership and Workspace policy generation for a Human review",data(reference("RaftWorkspace")))},

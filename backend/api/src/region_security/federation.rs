@@ -23,7 +23,7 @@ impl Runtime {
     ) -> Result<Credential> {
         self.allow_workspace(workspace)?;
         let now = self.clock.now().await?;
-        let token = self.global.verify(proof, now)?;
+        let token = self.global.verify_federated(proof, now)?;
         if token.workspace_id() != workspace
             || token.family_id().is_some()
             || token.key_version() != 1

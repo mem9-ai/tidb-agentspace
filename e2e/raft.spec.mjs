@@ -184,6 +184,7 @@ test('query keeps its original request through a lost response and browser reloa
 }) => {
   let submissions = 0;
   let retained;
+  let missing = false;
   await setup(page, async (request, url) => {
     const path = url.pathname.slice(base.length);
     if (path === '/api/raft/actions/context')
@@ -224,6 +225,7 @@ test('query keeps its original request through a lost response and browser reloa
     }
     if (path === '/api/raft/actions/query-status') {
       expect(url.searchParams.get('requestId')).toBe(retained.requestId);
+      if (missing) return { status: 404, json: { error: { code: 'NOT_FOUND' } } };
       return {
         json: {
           requestId: retained.requestId,
@@ -245,6 +247,11 @@ test('query keeps its original request through a lost response and browser reloa
   await expect(page.getByRole('button', { name: 'Run query', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Check query status', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('database outcome is unknown');
+  missing = true;
+  await page.getByRole('button', { name: 'Check query status', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('NOT_FOUND');
+  await expect(page.getByRole('button', { name: 'Run query', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'New query', exact: true })).not.toBeVisible();
   expect(submissions).toBe(1);
 });
 
@@ -305,3 +312,84 @@ test('Human reviews the verified identity reported by an unadmitted agent before
   expect(invited).toBe(true);
   expect(creates).toBe(0);
 });
+
+for (const [status, code] of [
+  [400, 'INVALID_SQL'],
+  [403, 'READ_ONLY_SQL_REQUIRED'],
+]) {
+  test(`SQL can be corrected after definite pre-execution rejection ${code}`, async ({ page }) => {
+    let submissions = 0;
+    await setup(page, async (request, url) => {
+      const path = url.pathname.slice(base.length);
+      if (path === '/api/raft/actions/context')
+        return {
+          json: {
+            actor: { id: agentId, kind: 'agent', serverId },
+            expiresAt: 1900000000,
+            enrollmentRequired: false,
+            resourceReady: null,
+            workspaces: [{ ...ws, canManage: false }],
+            nextCursor: null,
+          },
+        };
+      if (path === '/api/raft/actions/list-resources')
+        return {
+          json: {
+            resources: [
+              {
+                id: 'db_research',
+                name: 'research-data',
+                kind: 'postgresql',
+                region: 'automatic',
+                status: 'active',
+                provider: 'db9-anonymous',
+                allowedActions: ['resources:read', 'queries:read'],
+              },
+            ],
+            nextCursor: null,
+          },
+        };
+      if (path === '/api/raft/actions/query') {
+        submissions++;
+        if (submissions === 1) return { status, json: { error: { code } } };
+        const input = request.postDataJSON();
+        expect(input.sql).toBe('SELECT 1 AS hello;');
+        return {
+          json: {
+            requestId: input.requestId,
+            operationId: input.requestId,
+            status: 'succeeded',
+            result: { columns: ['hello'], rows: [{ hello: 1 }] },
+            errorCode: null,
+          },
+        };
+      }
+    });
+    await page.goto('/raft');
+    await page.getByRole('button', { name: 'research-data', exact: true }).click();
+    const editor = page.getByRole('textbox', { name: 'SQL query', exact: true });
+    const run = page.getByRole('button', { name: 'Run query', exact: true });
+    await editor.fill('');
+    await run.click();
+    await expect(page.getByRole('alert')).toContainText('Enter a SQL query');
+    expect(submissions).toBe(0);
+    await expect(editor).toBeEditable();
+    await editor.fill('DELETE FROM example');
+    await run.click();
+    await expect(page.getByRole('alert')).toContainText(
+      code === 'INVALID_SQL' ? 'Enter a valid SQL' : 'Only read-only SQL',
+    );
+    await expect(editor).toBeEditable();
+    await expect(run).toBeEnabled();
+    expect(submissions).toBe(1);
+    await page.reload();
+    await page.getByRole('button', { name: 'research-data', exact: true }).click();
+    await expect(run).toBeEnabled();
+    await run.click();
+    await expect(
+      page.getByRole('region', { name: 'Query result data', exact: true }),
+    ).toContainText('hello');
+    await expect(page.getByRole('button', { name: 'New query', exact: true })).toBeVisible();
+    expect(submissions).toBe(2);
+  });
+}
