@@ -321,7 +321,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Submit SQL with a retained request UUID; never retry uncertain writes with a new ID
+     * Submit SQL with a retained request UUID; INVALID_SQL (400) and READ_ONLY_SQL_REQUIRED (403) reject before execution; other errors require observing the original ID
      * @description Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.
      */
     post: operations['raftQuery'];

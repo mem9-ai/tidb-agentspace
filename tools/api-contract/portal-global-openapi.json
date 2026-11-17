@@ -3111,7 +3111,7 @@
             "raftSession": []
           }
         ],
-        "summary": "Submit SQL with a retained request UUID; never retry uncertain writes with a new ID"
+        "summary": "Submit SQL with a retained request UUID; INVALID_SQL (400) and READ_ONLY_SQL_REQUIRED (403) reject before execution; other errors require observing the original ID"
       }
     },
     "/api/raft/actions/query-status": {

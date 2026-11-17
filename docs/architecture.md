@@ -17,6 +17,11 @@ The [db9 adapter](decisions/0011-db9-postgres.md) implements an independent Post
 resource. Its credentials stay private and customer SQL uses a non-superuser role; see
 [compatibility and recovery](db9-postgres.md).
 
+The optional native [Raft mode](raft-agents.md) implements the separate federated contract in
+[ADR 0062](decisions/0062-federated-raft-access.md): Workspace → Resource, organizational tags,
+verified Humans/Agents and explicit resource grants. Cloud delegation, application credentials
+and tenant conversion remain separate from that mode and require their own verified contracts.
+
 ## Product model
 
 A Workspace is the persistent context for one application, experiment, or agent workflow.

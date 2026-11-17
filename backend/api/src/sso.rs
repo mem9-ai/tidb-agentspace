@@ -215,6 +215,9 @@ impl VerifiedLogin {
             None
         }
     }
+    pub(crate) fn claims(&self) -> &Value {
+        &self.claims
+    }
     pub(crate) fn identity(&self) -> (&str, &str) {
         (&self.issuer, &self.subject)
     }
@@ -262,10 +265,10 @@ struct Endpoints {
     token: String,
     jwks: String,
 }
-struct Flow {
+pub(crate) struct Flow {
     state: String,
-    nonce: String,
-    verifier: String,
+    pub(crate) nonce: String,
+    pub(crate) verifier: String,
     expires: Instant,
 }
 pub struct Runtime {
@@ -286,6 +289,7 @@ impl Runtime {
             client: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .connect_timeout(Duration::from_secs(3))
+                .retry(reqwest::retry::never())
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
             endpoints: Mutex::new(None),
@@ -411,6 +415,16 @@ impl Runtime {
         flow: &str,
         query: &BTreeMap<String, String>,
     ) -> Result<VerifiedLogin, ServiceError> {
+        let (code, flow) = self.take_flow(flow, query).await?;
+        self.verify(&code, &flow)
+            .await
+            .map_err(|_| failure(401, "SSO_VERIFICATION_FAILED"))
+    }
+    pub(crate) async fn take_flow(
+        &self,
+        flow: &str,
+        query: &BTreeMap<String, String>,
+    ) -> Result<(String, Flow), ServiceError> {
         let flow = self
             .flows
             .lock()
@@ -428,9 +442,7 @@ impl Runtime {
             .get("code")
             .filter(|s| !s.is_empty())
             .ok_or_else(|| failure(400, "SSO_CODE_MISSING"))?;
-        self.verify(code, &flow)
-            .await
-            .map_err(|_| failure(401, "SSO_VERIFICATION_FAILED"))
+        Ok((code.to_owned(), flow))
     }
     async fn verify(&self, code: &str, flow: &Flow) -> Result<VerifiedLogin> {
         let e = self.endpoints().await?;
@@ -448,6 +460,11 @@ impl Runtime {
         let token = tokens["id_token"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing ID token"))?;
+        self.verify_id_token(token, &flow.nonce).await
+    }
+    pub(crate) async fn verify_id_token(&self, token: &str, nonce: &str) -> Result<VerifiedLogin> {
+        let e = self.endpoints().await?;
+        let c = &self.config;
         let header = decode_header(token)?;
         // Only asymmetric signing; the public JWK can never become an HMAC secret.
         ensure!(
@@ -492,7 +509,7 @@ impl Runtime {
         validation.set_audience(&[&c.client_id]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
         let claims = decode::<Value>(token, &decoding, &validation)?.claims;
-        ensure!(claims["nonce"].as_str() == Some(&flow.nonce), "Wrong nonce");
+        ensure!(claims["nonce"].as_str() == Some(nonce), "Wrong nonce");
         if claims["aud"].as_array().is_some_and(|a| a.len() > 1) {
             ensure!(claims["azp"] == c.client_id, "Wrong authorized party");
         }
