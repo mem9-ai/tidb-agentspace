@@ -103,7 +103,10 @@ versions. A partial inactive implementation is not completion of those acceptanc
 ## Delivery authority and external dependencies
 
 Implement, test and publish task-scoped source through the repository's existing PR workflow.
-Its current merge policy still applies. Deployment, live tenant conversion, App registration,
+For this implementation, the owner requires independent Staff review and owner/colleague
+review before merge. Keep the reintroduced implementation in a draft PR until the owner
+confirms that review is complete. Passing CI alone does not release this review requirement.
+Deployment, live tenant conversion, App registration,
 real provider provisioning and release use their respective configured targets and authority;
 implementation approval does not silently authorize unrelated external effects.
 
