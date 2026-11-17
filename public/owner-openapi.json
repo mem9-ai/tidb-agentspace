@@ -1243,6 +1243,54 @@
         ],
         "type": "object"
       },
+      "QueryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "additionalProperties": false,
+            "properties": {
+              "errorCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "outcomeUnknown"
+                ]
+              }
+            },
+            "required": [
+              "requestId",
+              "state",
+              "errorCode"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QueryResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "operation",
+          "result"
+        ],
+        "type": "object"
+      },
       "QueryResult": {
         "properties": {
           "affectedRows": {

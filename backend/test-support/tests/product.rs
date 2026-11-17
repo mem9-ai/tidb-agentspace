@@ -1301,3 +1301,116 @@ async fn resource_pages_and_indexes_support_large_workspaces() -> Result<()> {
     assert!(page["nextCursor"].is_string());
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires isolated RustFS and built native binaries"]
+async fn query_request_deduplication_survives_retries_restart_and_unknown_provider_outcome()
+-> Result<()> {
+    let mut f = Workspaces::start(false, false).await?;
+    let request = uuid::Uuid::new_v4().to_string();
+    let sql = "SELECT 1 AS dedupe_marker";
+    let body = json!({"resourceId":"db_pg","sql":sql,"requestId":request});
+    let (a, b) = tokio::join!(
+        f.owner(0, Method::POST, "/query-requests")
+            .json(&body)
+            .send(),
+        f.owner(0, Method::POST, "/query-requests")
+            .json(&body)
+            .send()
+    );
+    for response in [a?, b?] {
+        assert!([200, 202].contains(&response.status().as_u16()));
+    }
+    let observed = expect(f.owner(0, Method::POST, "/query-requests").json(&body), 200).await?;
+    assert_eq!(observed["operation"]["state"], "succeeded");
+    assert_eq!(
+        f.provider
+            .state
+            .lock()
+            .unwrap()
+            .statements
+            .iter()
+            .filter(|s| s.as_str() == sql)
+            .count(),
+        1
+    );
+    let mut changed = body.clone();
+    changed["sql"] = json!("SELECT 2");
+    assert_eq!(
+        expect(
+            f.owner(0, Method::POST, "/query-requests").json(&changed),
+            409
+        )
+        .await?["error"]["code"],
+        "REQUEST_ID_REUSED"
+    );
+    let status = format!("/resources/db_pg/query-requests/{request}");
+    assert_eq!(
+        expect(f.owner(0, Method::GET, &status), 200).await?["operation"]["state"],
+        "succeeded"
+    );
+    f.restart(false).await?;
+    assert_eq!(
+        expect(f.owner(0, Method::POST, "/query-requests").json(&body), 200).await?["operation"]["state"],
+        "succeeded"
+    );
+    assert_eq!(
+        f.provider
+            .state
+            .lock()
+            .unwrap()
+            .statements
+            .iter()
+            .filter(|s| s.as_str() == sql)
+            .count(),
+        1
+    );
+    let lost = uuid::Uuid::new_v4().to_string();
+    f.provider.set_sql_hook(|input| async move {
+        if input["sql"] == "SELECT 1 AS lost_query_response" {
+            Some(workspace_test_support::provider::SqlResponse::Disconnect)
+        } else {
+            None
+        }
+    });
+    let uncertain =
+        json!({"resourceId":"db_pg","sql":"SELECT 1 AS lost_query_response","requestId":lost});
+    assert_eq!(
+        expect(
+            f.owner(0, Method::POST, "/query-requests").json(&uncertain),
+            503
+        )
+        .await?["error"]["code"],
+        "QUERY_OUTCOME_UNKNOWN"
+    );
+    assert_eq!(
+        expect(
+            f.owner(0, Method::POST, "/query-requests").json(&uncertain),
+            200
+        )
+        .await?["operation"]["state"],
+        "outcomeUnknown"
+    );
+    assert_eq!(
+        f.provider
+            .state
+            .lock()
+            .unwrap()
+            .statements
+            .iter()
+            .filter(|s| s.as_str() == "SELECT 1 AS lost_query_response")
+            .count(),
+        1
+    );
+    let status = format!("/resources/db_pg/query-requests/{lost}");
+    assert_eq!(
+        expect(f.owner(0, Method::GET, &status), 200).await?["operation"]["state"],
+        "outcomeUnknown"
+    );
+    let key = f
+        .create_key(0, "different-actor", &["queries:read"], &["db_pg"])
+        .await?;
+    let token = f.exchange(0, key["secret"].as_str().unwrap()).await?;
+    expect(f.agent(0, Method::GET, &status, Some(&token)), 404).await?;
+    Ok(())
+}

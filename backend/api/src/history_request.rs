@@ -54,7 +54,7 @@ impl HistoryRequest {
         let operation = match route.split('/').nth(1) {
             Some("resources") => HttpOperation::Resources,
             Some("files" | "file-analysis" | "file-analysis-capabilities") => HttpOperation::Files,
-            Some("queries") => HttpOperation::Query,
+            Some("queries" | "query-requests") => HttpOperation::Query,
             Some("" | "settings" | "events" | "usage") => HttpOperation::Workspace,
             _ => HttpOperation::Other,
         };

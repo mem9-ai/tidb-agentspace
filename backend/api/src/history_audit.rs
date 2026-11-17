@@ -30,7 +30,7 @@ pub fn target_candidate(
     input: &Value,
 ) -> Option<String> {
     let value = match (method, route) {
-        ("PUT", "/files") | ("POST", "/queries" | "/database-imports") => {
+        ("PUT", "/files") | ("POST", "/queries" | "/query-requests" | "/database-imports") => {
             input["resourceId"].as_str()
         }
         ("PUT", "/files/content") | ("DELETE", "/files/entry") => {
@@ -69,7 +69,9 @@ pub fn action(method: &str, route: &str, input: &Value) -> Option<AuditAction> {
         ("DELETE", "/files/entry") => Some(AuditAction::FileDelete),
         ("POST", "/database-imports") => Some(AuditAction::DatabaseImport),
         // A non-read-only query can mutate; the label does not assert that it did.
-        ("POST", "/queries") if input["readOnly"] != true => Some(AuditAction::QueryExecute),
+        ("POST", "/queries" | "/query-requests") if input["readOnly"] != true => {
+            Some(AuditAction::QueryExecute)
+        }
         ("POST", "/result-exports" | "/file-exports") => match input["target"]["kind"].as_str() {
             Some("filesystem") => Some(AuditAction::FileWrite),
             Some("database") => Some(AuditAction::QueryExecute),

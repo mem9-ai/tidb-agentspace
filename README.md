@@ -6,6 +6,8 @@ Give your agent a place to work with files and data across sessions. Connect Cod
 
 AgentSpace currently provides PostgreSQL-compatible databases, persistent File Systems, and resource/action permissions through Workspace Keys. Agents run in their own tools. Agent identity, online status, hosted agent execution, Runs, and Memory are not implemented.
 
+The Raft identity implementation from PR 267 is withdrawn pending independent and owner review. Its published OpenAPI declarations remain reserved for compatibility, but Raft login, actions, governance and the Raft Console are unavailable in this revision. Existing Owner and Workspace Key SQL request/status APIs and durable deduplication records remain supported; rollback does not erase operation identities or resource data.
+
 ## Get your first result
 
 1. Open [Home in Studio](https://drive9.ai/studio/#overview) and sign in or choose **Try without an account**. A new Workspace prepares a default File System; temporary workspaces expire after 48 hours.
