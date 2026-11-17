@@ -32,6 +32,8 @@ workspace-contracts.workspace = true
 
 [dev-dependencies]
 workspace-backend = { path = "../host" }
+workspace-api.workspace = true
+workspace-identity.workspace = true
 chrono.workspace = true
 axum-server = { version = "=0.8.0", features = ["tls-rustls-no-provider"] }
 rustls-pemfile = "=2.2.0"

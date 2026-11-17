@@ -5,6 +5,7 @@ pub mod cleanup;
 pub mod dpop;
 pub mod embedded_region;
 pub mod enrollment_ticket;
+pub mod federation;
 pub mod global_keys;
 pub mod global_owner_sessions;
 pub mod onboarding;
@@ -839,6 +840,353 @@ pub(crate) mod tests {
 
     fn identity<'a>(issuer: &'a str, subject: &'a str) -> VerifiedIdentity<'a> {
         VerifiedIdentity { issuer, subject }
+    }
+
+    #[tokio::test]
+    async fn federated_login_is_stable_without_implicit_workspace_or_membership() {
+        use crate::federation::{ExternalIdentity, Federation, PrincipalKind};
+        let metadata = Arc::new(MemoryMeta::default());
+        let directory = Federation::open(metadata.clone()).await.unwrap();
+        let identity = ExternalIdentity {
+            provider: "raft".into(),
+            server_id: Uuid::new_v4().to_string(),
+            subject: "subject-not-display-name".into(),
+            kind: PrincipalKind::Agent,
+        };
+        let (first, second) = tokio::join!(
+            directory.resolve(identity.clone()),
+            directory.resolve(identity.clone())
+        );
+        let first = first.unwrap();
+        assert_eq!(first, second.unwrap());
+        let restarted = Federation::open(metadata.clone()).await.unwrap();
+        assert_eq!(first, restarted.resolve(identity.clone()).await.unwrap());
+        let mut changed_kind = identity.clone();
+        changed_kind.kind = PrincipalKind::Human;
+        assert_eq!(
+            restarted.resolve(changed_kind).await.unwrap_err().code,
+            "IDENTITY_KIND_MISMATCH"
+        );
+        assert_eq!(first, directory.principal(&first.id).await.unwrap());
+        assert!(
+            metadata
+                .groups
+                .lock()
+                .unwrap()
+                .keys()
+                .all(|scope| !scope.contains("workspace"))
+        );
+        metadata.lose_reply.store(true, Ordering::SeqCst);
+        let mut other = identity;
+        other.server_id = Uuid::new_v4().to_string();
+        assert_eq!(
+            directory.resolve(other.clone()).await.unwrap_err().code,
+            "META_COMMIT_UNKNOWN"
+        );
+        let recovered = directory.resolve(other.clone()).await.unwrap();
+        assert_eq!(recovered, restarted.resolve(other).await.unwrap());
+        assert_ne!(recovered.id, first.id);
+    }
+
+    #[tokio::test]
+    async fn federated_governance_requires_human_admission_and_exact_grants() {
+        use crate::federation::{
+            AccessGrant, ExternalIdentity, Federation, PrincipalKind, ResourceAction,
+        };
+        let metadata = Arc::new(MemoryMeta::default());
+        let directory = Federation::open(metadata.clone()).await.unwrap();
+        let server = Uuid::new_v4().to_string();
+        let external = |subject: &str, kind| ExternalIdentity {
+            provider: "raft".into(),
+            server_id: server.clone(),
+            subject: subject.into(),
+            kind,
+        };
+        let human = directory
+            .resolve(external("owner", PrincipalKind::Human))
+            .await
+            .unwrap();
+        let a = directory
+            .resolve(external("a", PrincipalKind::Agent))
+            .await
+            .unwrap();
+        let b = directory
+            .resolve(external("b", PrincipalKind::Agent))
+            .await
+            .unwrap();
+        let request = Uuid::new_v4().to_string();
+        assert_eq!(
+            directory
+                .create_workspace(&a, &request, "work", "region:a")
+                .await
+                .unwrap_err()
+                .code,
+            "HUMAN_APPROVAL_REQUIRED"
+        );
+        let workspace = directory
+            .create_workspace(&human, &request, "work", "region:a")
+            .await
+            .unwrap();
+        assert_eq!(
+            workspace,
+            directory
+                .create_workspace(&human, &request, "work", "region:a")
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            directory
+                .create_workspace(&human, &request, "changed", "region:a")
+                .await
+                .unwrap_err()
+                .code,
+            "REQUEST_ID_REUSED"
+        );
+        assert_eq!(
+            directory.workspaces(&a, None).await.unwrap()["data"],
+            json!([])
+        );
+        assert!(directory.membership(&a, &workspace.id).await.is_err());
+        directory
+            .request_enrollment(&a, &workspace.id)
+            .await
+            .unwrap();
+        directory
+            .request_enrollment(&b, &workspace.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            directory
+                .decide_enrollment(&a, &workspace.id, &b.id, true, None)
+                .await
+                .unwrap_err()
+                .code,
+            "HUMAN_APPROVAL_REQUIRED"
+        );
+        for member in [&a, &b] {
+            directory
+                .decide_enrollment(&human, &workspace.id, &member.id, true, None)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            directory.workspaces(&a, None).await.unwrap()["data"][0]["id"],
+            workspace.id
+        );
+        assert_eq!(
+            directory
+                .grants(&a, &workspace.id, None, None)
+                .await
+                .unwrap()["records"],
+            json!([])
+        );
+        let grant = AccessGrant {
+            id: Uuid::new_v4().to_string(),
+            principal_id: a.id.clone(),
+            resource_id: "fs_a".into(),
+            actions: vec![ResourceAction::Discover, ResourceAction::ReadFiles],
+            revoked: false,
+            expires_at: None,
+        };
+        assert_eq!(
+            directory
+                .put_grant(&a, &workspace.id, grant.clone(), None)
+                .await
+                .unwrap_err()
+                .code,
+            "HUMAN_APPROVAL_REQUIRED"
+        );
+        assert_eq!(
+            directory
+                .put_grant(&human, &workspace.id, grant.clone(), Some(999))
+                .await
+                .unwrap_err()
+                .code,
+            "POLICY_VERSION_CONFLICT"
+        );
+        directory
+            .put_grant(&human, &workspace.id, grant.clone(), None)
+            .await
+            .unwrap();
+        directory
+            .put_grant(&human, &workspace.id, grant.clone(), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            directory
+                .grants(&a, &workspace.id, None, None)
+                .await
+                .unwrap()["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            directory
+                .grants(&b, &workspace.id, None, None)
+                .await
+                .unwrap()["records"],
+            json!([])
+        );
+        let mut expanded = grant.clone();
+        expanded.actions.push(ResourceAction::WriteFiles);
+        assert_eq!(
+            directory
+                .put_grant(&human, &workspace.id, expanded, None)
+                .await
+                .unwrap_err()
+                .code,
+            "GRANT_ID_REUSED"
+        );
+        let revoked = AccessGrant {
+            revoked: true,
+            ..grant.clone()
+        };
+        directory
+            .put_grant(&human, &workspace.id, revoked, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            directory
+                .put_grant(&human, &workspace.id, grant, None)
+                .await
+                .unwrap_err()
+                .code,
+            "GRANT_ID_REUSED"
+        );
+        let batch = Uuid::new_v4().to_string();
+        let intent =
+            json!({"principalId":b.id,"resourceIds":["fs_a"],"actions":["resources:read"]});
+        metadata.lose_reply.store(true, Ordering::SeqCst);
+        assert_eq!(
+            directory
+                .prepare_share_batch(&human, &workspace.id, &batch, intent.clone(), None)
+                .await
+                .unwrap_err()
+                .code,
+            "META_COMMIT_UNKNOWN"
+        );
+        directory
+            .prepare_share_batch(&human, &workspace.id, &batch, intent.clone(), None)
+            .await
+            .unwrap();
+        directory
+            .prepare_share_batch(&human, &workspace.id, &batch, intent.clone(), None)
+            .await
+            .unwrap();
+        let mut enlarged = intent.clone();
+        enlarged["resourceIds"] = json!(["fs_a", "fs_future"]);
+        assert_eq!(
+            directory
+                .prepare_share_batch(&human, &workspace.id, &batch, enlarged, None)
+                .await
+                .unwrap_err()
+                .code,
+            "REQUEST_ID_REUSED"
+        );
+        assert_eq!(
+            directory
+                .prepare_share_batch(&a, &workspace.id, &Uuid::new_v4().to_string(), intent, None)
+                .await
+                .unwrap_err()
+                .code,
+            "HUMAN_APPROVAL_REQUIRED"
+        );
+        assert_eq!(
+            directory
+                .resource_index(&a, &workspace.id, None)
+                .await
+                .unwrap()["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            directory
+                .resource_actions(&a, &workspace.id, "fs_a", 0)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        directory
+            .suspend_member(&human, &workspace.id, &b.id, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            directory
+                .enrollment(&b, &workspace.id)
+                .await
+                .unwrap()
+                .status,
+            crate::federation::EnrollmentStatus::Removed
+        );
+        let audit = directory
+            .audit_events(&human, &workspace.id, None)
+            .await
+            .unwrap();
+        let events = audit["data"].as_array().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["action"] == "grant.created")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["action"] == "grant.revoked")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["action"] == "sharing.prepared")
+                .count(),
+            1
+        );
+        assert!(
+            events
+                .iter()
+                .all(|e| e["actor"]["id"] == human.id || e["action"] == "enrollment.requested")
+        );
+        assert_eq!(
+            directory
+                .audit_events(&a, &workspace.id, None)
+                .await
+                .unwrap_err()
+                .code,
+            "HUMAN_APPROVAL_REQUIRED"
+        );
+        let restarted = Federation::open(metadata).await.unwrap();
+        assert_eq!(
+            restarted
+                .grants(&a, &workspace.id, None, None)
+                .await
+                .unwrap()["records"][0]["value"]["revoked"],
+            true
+        );
+        assert_eq!(
+            restarted.workspaces(&b, None).await.unwrap()["data"],
+            json!([])
+        );
+        assert_eq!(
+            restarted
+                .prepare_share_batch(
+                    &human,
+                    &workspace.id,
+                    &batch,
+                    json!({"different":true}),
+                    None
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "REQUEST_ID_REUSED"
+        );
     }
 
     #[tokio::test]

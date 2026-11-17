@@ -310,6 +310,604 @@
         ],
         "type": "object"
       },
+      "RaftAuditEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "human",
+                  "agent"
+                ]
+              },
+              "serverId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "serverId"
+            ],
+            "type": "object"
+          },
+          "at": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "recorded",
+              "denied",
+              "uncertain"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "action",
+          "outcome",
+          "actor",
+          "details"
+        ],
+        "type": "object"
+      },
+      "RaftCatalog": {
+        "properties": {
+          "capabilities": {
+            "properties": {
+              "filesystem": {
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "regions": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "regions",
+                  "provider"
+                ],
+                "type": "object"
+              },
+              "postgresql": {
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "regions": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "regions",
+                  "provider",
+                  "available"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "filesystem",
+              "postgresql"
+            ],
+            "type": "object"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RaftResource"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "RaftContext": {
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "human",
+                  "agent"
+                ]
+              },
+              "serverId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "serverId"
+            ],
+            "type": "object"
+          },
+          "enrollmentRequired": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "integer"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceReady": {
+            "description": "Null until list-resources has checked resource readiness.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/RaftWorkspace"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "actor",
+          "expiresAt",
+          "enrollmentRequired",
+          "resourceReady",
+          "workspaces",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "RaftEnrollment": {
+        "additionalProperties": false,
+        "properties": {
+          "principal": {
+            "$ref": "#/components/schemas/RaftPrincipal"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "removed"
+            ]
+          }
+        },
+        "required": [
+          "principal",
+          "status"
+        ],
+        "type": "object"
+      },
+      "RaftFile": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "encoding": {
+            "const": "utf8"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "encoding",
+          "size"
+        ],
+        "type": "object"
+      },
+      "RaftGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "resources:read",
+                "files:read",
+                "files:write",
+                "queries:read",
+                "queries:execute",
+                "tags:write"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expiresAt": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "principalId",
+          "resourceId",
+          "actions",
+          "revoked"
+        ],
+        "type": "object"
+      },
+      "RaftGrantInput": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "resources:read",
+                "files:read",
+                "files:write",
+                "queries:read",
+                "queries:execute",
+                "tags:write"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expiresAt": {
+            "type": "integer"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "principalId",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "RaftPrincipal": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "identity": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "human",
+                  "agent"
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "serverId": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "serverId",
+              "subject",
+              "kind"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "identity"
+        ],
+        "type": "object"
+      },
+      "RaftQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed",
+              "outcomeUnknown"
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "operationId",
+          "status",
+          "result",
+          "errorCode"
+        ],
+        "type": "object"
+      },
+      "RaftQueryInput": {
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "sql": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "resourceId",
+          "requestId",
+          "sql"
+        ],
+        "type": "object"
+      },
+      "RaftResource": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "filesystem",
+              "postgresql"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tags": {
+            "$ref": "#/components/schemas/RaftTags"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "region",
+          "status",
+          "provider",
+          "allowedActions"
+        ],
+        "type": "object"
+      },
+      "RaftShareBatch": {
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "properties": {
+                "errorCode": {
+                  "type": "string"
+                },
+                "grant": {
+                  "$ref": "#/components/schemas/RaftGrant"
+                },
+                "resourceId": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "applied",
+                    "pending",
+                    "failed"
+                  ]
+                }
+              },
+              "required": [
+                "resourceId",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "requestId",
+          "results"
+        ],
+        "type": "object"
+      },
+      "RaftShareBatchInput": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "resources:read",
+                "files:read",
+                "files:write",
+                "queries:read",
+                "queries:execute",
+                "tags:write"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expiresAt": {
+            "type": "integer"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "resourceIds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "requestId",
+          "expiresAt",
+          "principalId",
+          "resourceIds",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "RaftTags": {
+        "additionalProperties": false,
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "maxLength": 256,
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "version": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "values"
+        ],
+        "type": "object"
+      },
+      "RaftWorkspace": {
+        "additionalProperties": false,
+        "properties": {
+          "canManage": {
+            "type": "boolean"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "regionId": {
+            "type": "string"
+          },
+          "serverId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "serverId",
+          "regionId",
+          "generation"
+        ],
+        "type": "object"
+      },
       "Region": {
         "additionalProperties": false,
         "properties": {
@@ -486,6 +1084,12 @@
         "name": "aw_global_owner",
         "type": "apiKey"
       },
+      "raftSession": {
+        "description": "Encrypted service session; current external identity and exact local permissions are checked on every request.",
+        "in": "cookie",
+        "name": "aw_raft_session",
+        "type": "apiKey"
+      },
       "workspaceKey": {
         "description": "Workspace Key is sent only to Global token issuance, never forwarded to Region.",
         "scheme": "bearer",
@@ -500,6 +1104,43 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/.well-known/raft-agent-manifest.json": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftManifest",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Public v0 manifest for five actions"
+      }
+    },
     "/api/auth/config": {
       "get": {
         "operationId": "getGlobalAuthConfig",
@@ -2285,6 +2926,1909 @@
         "summary": "Create Portal Region Session Ticket"
       }
     },
+    "/api/raft/actions/context": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftContext",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftContext"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Inspect current identity and own Workspaces"
+      }
+    },
+    "/api/raft/actions/list-resources": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftListResources",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "JSON object of at most 20 exact string key/value filters, AND semantics. Tags convey no permission. A changed policy/filter invalidates the cursor.",
+            "in": "query",
+            "name": "tags",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "resources": {
+                      "items": {
+                        "$ref": "#/components/schemas/RaftResource"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "resources",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Discover only currently authorized resources"
+      }
+    },
+    "/api/raft/actions/query": {
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftQuery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaftQueryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftQuery"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Submit SQL with a retained request UUID; never retry uncertain writes with a new ID"
+      }
+    },
+    "/api/raft/actions/query-status": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftQueryStatus",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftQuery"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Observe an existing own request without repeating SQL"
+      }
+    },
+    "/api/raft/actions/read-file": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftReadFile",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Relative path without traversal, empty, dot or backslash segments.",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftFile"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Read at most 128 KiB of UTF-8 content"
+      }
+    },
+    "/api/raft/config": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "loginUrl": {
+                      "type": "string"
+                    },
+                    "regions": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "loginUrl",
+                    "regions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Discover public Raft sign-in and Region choices"
+      }
+    },
+    "/api/raft/workspaces": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftWorkspaces",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RaftWorkspace"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "List current own Workspaces"
+      },
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftCreateWorkspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "regionId": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "name",
+                  "regionId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftWorkspace"
+                    },
+                    "resourceReady": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "resourceReady"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created; resourceReady is false until a usable resource is explicitly created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Explicitly create an empty federated Workspace"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftWorkspace",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftWorkspace"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Read current membership and Workspace policy generation for a Human review"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/audit-events": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftAuditEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RaftAuditEvent"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor reads durable security history in chronological pages"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/enrollments": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftEnrollments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "records": {
+                      "items": {
+                        "properties": {
+                          "value": {
+                            "$ref": "#/components/schemas/RaftEnrollment"
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "records",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor reads admission requests"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftRequestEnrollment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftEnrollment"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Requested"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Request admission without data or creation rights"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/enrollments/self": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftOwnEnrollment",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/RaftEnrollment"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Inspect own pending, approved or denied enrollment"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/enrollments/{principalId}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "principalId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftDecideEnrollment",
+        "parameters": [
+          {
+            "description": "Quoted current Workspace generation, reviewed before this Human mutation. A fresh Human sign-in within ten minutes is required. Immutable retries resolve the original intent.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "approved"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftEnrollment"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor approves or denies one enrollment"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/invitations": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftInvite",
+        "parameters": [
+          {
+            "description": "Quoted current Workspace generation, reviewed before this Human mutation. A fresh Human sign-in within ten minutes is required. Immutable retries resolve the original intent.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "principalId": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "principalId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftEnrollment"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Recorded and applied"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human admits a verified identity with no resource or creation rights"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/invitations/{requestId}": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftInvitation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftEnrollment"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Read original admission outcome; a removed member is never reactivated by retry"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "requestId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/members/{principalId}": {
+      "delete": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftRemoveMember",
+        "parameters": [
+          {
+            "description": "Quoted current Workspace generation, reviewed before this Human mutation. A fresh Human sign-in within ten minutes is required. Immutable retries resolve the original intent.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftWorkspace"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Remove membership without deleting data; never remove last Human owner"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "principalId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/principals/{principalId}": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftAdmissionCandidate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftPrincipal"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor reviews one exact previously verified identity in this Server"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "principalId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/resources": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftGovernanceResources",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftCatalog"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor lists resource metadata for sharing"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftCreateResource",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "filesystem",
+                      "postgresql"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "kind",
+                  "name",
+                  "region"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftResource"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor explicitly creates a native resource"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/resources/share-batches": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftShareBatch",
+        "parameters": [
+          {
+            "description": "Quoted current Workspace generation, reviewed before this Human mutation. A fresh Human sign-in within ten minutes is required. Immutable retries resolve the original intent.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaftShareBatchInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftShareBatch"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Freeze exact reviewed resources before sharing; partial edges are explicit and retries retain the same request ID"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/resources/{resourceId}/files": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftGetFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaftFile"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Read an authorized text file"
+      },
+      "put": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftWriteFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "content"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Create-only text write, or replace with the exact current revision; 64 KiB limit"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/resources/{resourceId}/grants": {
+      "get": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftResourceGrants",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RaftGrant"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor inspects exact resource grants"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "resourceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/api/raft/workspaces/{workspaceId}/resources/{resourceId}/grants/{grantId}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "resourceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "grantId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftPutGrant",
+        "parameters": [
+          {
+            "description": "Quoted current Workspace generation, reviewed before this Human mutation. A fresh Human sign-in within ten minutes is required. Immutable retries resolve the original intent.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaftGrantInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftGrant"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Human governor shares one exact resource or irrevocably revokes a grant ID"
+      }
+    },
+    "/api/raft/workspaces/{workspaceId}/resources/{resourceId}/tags": {
+      "put": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftSetTags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RaftTags"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RaftTags"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Replace organizational tags with tags:write and current version"
+      }
+    },
     "/api/session": {
       "post": {
         "description": "Explicit development profile only, real loopback peer and trusted Origin required. Unavailable in hosted deployments.",
@@ -2752,6 +5296,134 @@
           }
         ],
         "summary": "Get Global Token Issuance"
+      }
+    },
+    "/auth/raft/callback": {
+      "get": {
+        "operationId": "raftCallback",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "nextAction": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authenticated",
+                    "nextAction"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Agent session cookie set on this response"
+          },
+          "303": {
+            "description": "Human session established; redirect to fixed Console URL"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "hint": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "hint"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Flat CLI-compatible failure; expired/consumed code is 409"
+          }
+        },
+        "security": [],
+        "summary": "Redeem a Human or no-state Agent code at one registered callback"
+      }
+    },
+    "/auth/raft/login": {
+      "get": {
+        "operationId": "raftLogin",
+        "responses": {
+          "303": {
+            "description": "Redirect to trusted Raft issuer; sets flow cookie"
+          }
+        },
+        "security": [],
+        "summary": "Start Human OIDC with one-use state, nonce and S256 PKCE"
+      }
+    },
+    "/auth/raft/logout": {
+      "post": {
+        "description": "Requires current Raft identity and current exact AgentSpace permissions. Admission grants no data access. Upstream outages fail closed. No Owner impersonation.",
+        "operationId": "raftLogout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Signed out; session cookie cleared"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Denied"
+          }
+        },
+        "security": [
+          {
+            "raftSession": []
+          }
+        ],
+        "summary": "Durably revoke this session"
       }
     }
   },

@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { RaftConsole } from './features/raft/RaftConsole';
 import { takeWorkspaceFilesEntry } from './features/navigation/upload-entry';
 import { TrialReportView } from './features/reports/TrialReportView';
 import { Admin } from './features/analytics/Admin';
@@ -37,7 +38,9 @@ async function start() {
     configureApi(config);
     root.render(
       <WorkspaceThemeProvider>
-        {window.location.pathname.replace(/\/$/, '').endsWith('/admin') ? (
+        {window.location.pathname.replace(/\/$/, '').endsWith('/raft') ? (
+          <RaftConsole />
+        ) : window.location.pathname.replace(/\/$/, '').endsWith('/admin') ? (
           <Admin />
         ) : (
           <>

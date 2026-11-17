@@ -1243,6 +1243,54 @@
         ],
         "type": "object"
       },
+      "QueryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "additionalProperties": false,
+            "properties": {
+              "errorCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "outcomeUnknown"
+                ]
+              }
+            },
+            "required": [
+              "requestId",
+              "state",
+              "errorCode"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QueryResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "operation",
+          "result"
+        ],
+        "type": "object"
+      },
       "QueryResult": {
         "properties": {
           "affectedRows": {
@@ -8488,6 +8536,238 @@
         "x-write-scope": "queries:execute"
       }
     },
+    "/workspaces/{workspaceId}/query-requests": {
+      "parameters": [
+        {
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API.",
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Required Region access Token scope: queries:execute for writes; queries:read for read-only SQL. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Retain requestId before sending. The ID binds this principal, Workspace, resource and request. Same content never executes twice; changed reuse is 409. Intent persists before provider submission. Lost provider response is outcomeUnknown; inspect the original request instead of creating a new ID. Results are retained encrypted, limited to 1 MiB/1,000 rows; SQL is limited to 64 KiB and 15 seconds. Request identities have no replay-enabling expiry.",
+        "operationId": "createQueryRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "requestId": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "sql": {
+                    "maxLength": 65536,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "resourceId",
+                  "requestId",
+                  "sql"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryRequest"
+                }
+              }
+            },
+            "description": "Terminal observation"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryRequest"
+                }
+              }
+            },
+            "description": "Existing request is still running"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid, expired, or revoked credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource or endpoint not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource lifecycle operation unsupported by provider"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict or free-tier limit"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Temporary database expired"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition failed without a write"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Content too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unsupported content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL syntax, result limit, or unsupported demo query"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider quota or rate limit"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider unavailable or invalid response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider binding needs operator recovery"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL timeout; a write outcome may be unknown"
+          }
+        },
+        "security": [
+          {
+            "regionalAccess": []
+          }
+        ],
+        "summary": "Submit SQL with durable request deduplication",
+        "tags": [
+          "Workspace"
+        ],
+        "x-required-scope": "queries:execute for writes; queries:read for read-only SQL"
+      }
+    },
     "/workspaces/{workspaceId}/refresh-families": {
       "post": {
         "description": "Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried.",
@@ -9640,6 +9920,215 @@
           "name": "resourceId",
           "required": true,
           "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/resources/{resourceId}/query-requests/{requestId}": {
+      "get": {
+        "description": "Required Region access Token scope: queries:read or queries:execute. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Requires current exact resource access. Missing records never authorize replay.",
+        "operationId": "getQueryRequest",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryRequest"
+                }
+              }
+            },
+            "description": "Observed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid, expired, or revoked credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource or endpoint not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource lifecycle operation unsupported by provider"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict or free-tier limit"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Temporary database expired"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition failed without a write"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Content too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unsupported content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL syntax, result limit, or unsupported demo query"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider quota or rate limit"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider unavailable or invalid response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider binding needs operator recovery"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL timeout; a write outcome may be unknown"
+          }
+        },
+        "security": [
+          {
+            "regionalAccess": []
+          }
+        ],
+        "summary": "Observe your retained SQL request without submitting SQL",
+        "tags": [
+          "Workspace"
+        ],
+        "x-required-scope": "queries:read or queries:execute"
+      },
+      "parameters": [
+        {
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API.",
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "resourceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "requestId",
+          "required": true,
+          "schema": {
+            "format": "uuid",
             "type": "string"
           }
         }
