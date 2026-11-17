@@ -1,5 +1,7 @@
 //! Independent Global public management API. Data-plane operations have no routes here.
 mod analytics_routes;
+mod raft_actions;
+mod raft_routes;
 use crate::{
     MetaBinding,
     access_signer::{AccessSigner, Issuance, SigningConfig},
@@ -75,6 +77,8 @@ pub struct Config {
     pub metadata_security_state: bool,
     pub regions: Vec<RegionDescriptor>,
     pub sso: Option<sso::Config>,
+    #[serde(default)]
+    pub raft: Option<crate::raft_auth::Config>,
     #[serde(default)]
     pub region_controls: Vec<RegionControlConfig>,
     #[serde(default)]
@@ -177,6 +181,14 @@ impl Config {
                 "Invalid Region path"
             );
         }
+        if let Some(raft) = &self.raft {
+            raft.validate(&self.public_origin, local)?;
+            ensure!(
+                reqwest::Url::parse(&raft.redirect_uri)?.path()
+                    == format!("{}/auth/raft/callback", self.public_path),
+                "Raft callback must match the Global mount"
+            );
+        }
         if let Some(sso) = &self.sso {
             sso.validate(&self.public_path, local)?;
             ensure!(
@@ -223,6 +235,16 @@ enum RegionControl {
     Connection(Arc<crate::region_connection::Hub>, String),
 }
 impl RegionControl {
+    async fn federation(
+        &self,
+        workspace: &workspace_identity::federation::Workspace,
+    ) -> workspace_contracts::Result<workspace_identity::federation::Workspace> {
+        match self {
+            Self::Direct(client) => client.federation(workspace).await,
+            Self::Connection(hub, _) => hub.federation(workspace).await,
+        }
+    }
+
     async fn apply(
         &self,
         command: &str,
@@ -308,6 +330,7 @@ struct App {
     verifier: AccessVerifier,
     clock: Clock,
     sso: Option<sso::Runtime>,
+    raft: Option<crate::raft_auth::Runtime>,
     flows: Mutex<BTreeMap<String, LoginFlow>>,
     capacity: Semaphore,
     regional: BTreeMap<String, RegionIssuer>,
@@ -722,6 +745,12 @@ impl GlobalServer {
         let owners = OwnerSessions::open(metadata.clone()).await?;
         let keys = GlobalKeys::open(metadata.clone()).await?;
         let sso = config.sso.clone().map(sso::Runtime::new).transpose()?;
+        let raft = match config.raft.clone() {
+            Some(settings) => {
+                Some(crate::raft_auth::Runtime::open(settings, metadata.clone()).await?)
+            }
+            None => None,
+        };
         let listener = if config.shared_listener {
             None
         } else {
@@ -765,6 +794,7 @@ impl GlobalServer {
                 verifier,
                 clock,
                 sso,
+                raft,
                 flows: Mutex::new(BTreeMap::new()),
                 capacity: Semaphore::new(16),
                 regional,
@@ -1551,6 +1581,12 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
             json!({"status":"ok","authority":"global"}),
             None,
         ));
+    }
+    if path.starts_with("/auth/raft/")
+        || path.starts_with("/api/raft/")
+        || path == "/.well-known/raft-agent-manifest.json"
+    {
+        return raft_routes::handle(app, &path, &method, &h, &query, request).await;
     }
     if path == "/api/session" && method == Method::POST {
         let local = app

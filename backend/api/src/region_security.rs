@@ -1,4 +1,5 @@
 //! Single-writer Region security integration. No Global client or callback exists here.
+mod federation;
 use crate::{
     access_signer::{AccessSigner, Family, Issuance, SigningConfig},
     policy_command::{ContinuityStatus, PolicyCommandVerifier, PolicyReceipt, PolicyTrust},
@@ -38,6 +39,8 @@ use workspace_meta_client::private_file;
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub raft: Option<crate::raft_auth::Trust>,
     pub public_origin: String,
     pub environment: String,
     pub global_issuer: String,
@@ -276,6 +279,8 @@ pub struct Runtime {
     public_path: String,
     clock: Arc<Clock>,
     policies: Arc<KeyPolicies>,
+    federation: workspace_identity::federation::RegionalFederation,
+    raft: Option<crate::raft_auth::Verifier>,
     families: RefreshFamilies,
     tickets: TicketVerifier,
     global: AccessVerifier,
@@ -295,6 +300,14 @@ impl Runtime {
         public_path: &str,
         loopback: bool,
     ) -> anyhow::Result<Arc<Self>> {
+        if let Some(trust) = &config.raft {
+            trust.validate(loopback)?;
+        }
+        let raft = config
+            .raft
+            .clone()
+            .map(crate::raft_auth::Verifier::new)
+            .transpose()?;
         let origin = crate::sso::endpoint(&config.public_origin, loopback)?;
         anyhow::ensure!(
             origin.origin().ascii_serialization() == config.public_origin,
@@ -435,6 +448,9 @@ impl Runtime {
         } else {
             None
         };
+        let federation =
+            workspace_identity::federation::RegionalFederation::open(metadata.clone(), region)
+                .await?;
         Ok(Arc::new(Self {
             config,
             workspace,
@@ -451,6 +467,8 @@ impl Runtime {
             control_verifier,
             portal_verifier,
             initializer,
+            federation,
+            raft,
             gates: (0..64).map(|_| Arc::new(RwLock::new(()))).collect(),
         }))
     }
@@ -1117,7 +1135,40 @@ impl ScopedAuthorization for Authorization {
         Box::pin(async { self.runtime.validate(&self.token).await })
     }
 }
+// Reuse the native rollback checkpoint, under a reserved non-customer policy identity.
+fn federation_floor(workspace: &workspace_identity::federation::Workspace) -> KeyPolicy {
+    KeyPolicy {
+        workspace_id: workspace.id.clone(),
+        region_id: workspace.region_id.clone(),
+        key_id: Uuid::nil().to_string(),
+        principal_id: "federated-workspace".into(),
+        key_version: workspace.generation,
+        policy_generation: workspace.generation,
+        grant_ref: format!("server:{}", workspace.server_id),
+        expires_at: i64::MAX,
+        revoked: false,
+    }
+}
 impl PolicyInstaller for Runtime {
+    fn federation<'a>(
+        &'a self,
+        workspace: &'a workspace_identity::federation::Workspace,
+    ) -> Pin<Box<dyn Future<Output = Result<workspace_identity::federation::Workspace>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            if self.federation.current(&workspace.id).await?.as_ref() == Some(workspace)
+                && self.check_floor(&federation_floor(workspace)).await.is_ok()
+            {
+                return Ok(workspace.clone());
+            }
+            let _lease = self.gate(&workspace.id).write_owned().await;
+            self.clock.now().await?;
+            self.federation.install(workspace).await?;
+            self.checkpoint(&federation_floor(workspace)).await?;
+            Ok(workspace.clone())
+        })
+    }
+
     fn apply<'a>(
         &'a self,
         command: &'a str,
