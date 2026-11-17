@@ -260,8 +260,6 @@ impl Product {
         let p = self.workspace.authenticate(&credential).await?;
         let actor_value = if p.owner {
             actor.to_owned()
-        } else if matches!(&credential,Credential::Scoped(auth) if auth.federated()) {
-            format!("principal:{}", p.id)
         } else {
             format!("key:{}", p.id)
         };
@@ -436,9 +434,6 @@ impl Product {
                     _ => return Err(err(400, "INVALID_KIND")),
                 };
                 let mut resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"regionId":authority,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
-                if matches!(&credential,Credential::Scoped(auth) if auth.federated()) {
-                    resource["createdBy"] = json!(p.id);
-                }
                 if initial {
                     resource["isDefault"] = json!(true);
                 }

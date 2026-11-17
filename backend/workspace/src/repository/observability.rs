@@ -24,8 +24,6 @@ const AUDIT_CAPACITY: u64 = 100_000;
 pub enum ActorKind {
     Owner,
     WorkspaceKey,
-    Human,
-    Agent,
 }
 
 #[derive(Clone, Copy)]
@@ -250,8 +248,6 @@ impl Repository {
             let actor_kind = match value["actor"]["kind"].as_str() {
                 Some("owner") => ActorKind::Owner,
                 Some("workspaceKey") => ActorKind::WorkspaceKey,
-                Some("human") => ActorKind::Human,
-                Some("agent") => ActorKind::Agent,
                 _ => return Err(error("AUDIT_INDEX_CORRUPT")),
             };
             let action = match value["action"].as_str() {
@@ -579,8 +575,6 @@ impl Repository {
         let actor_kind = match entry.actor_kind {
             ActorKind::Owner => "owner",
             ActorKind::WorkspaceKey => "workspaceKey",
-            ActorKind::Human => "human",
-            ActorKind::Agent => "agent",
         };
         let record = json!({
             "id":record_id.to_string(), "operationId":entry.operation_id.to_string(),

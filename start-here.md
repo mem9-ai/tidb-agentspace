@@ -47,10 +47,6 @@ It also defines product completeness: supported customer business workflows must
 through documented OpenAPI without Portal automation. Pure presentation/browser interactions
 are the UI-only exception; authentication and permission boundaries still apply.
 
-The optional [Raft identity and resource flow](docs/raft-agents.md) uses the existing native
-Global/Region boundary; [ADR 0062](docs/decisions/0062-federated-raft-access.md) separates it from
-legacy Keys and records its deployment and provider limits.
-
 [Global public API implementation](docs/global-public-api.md) documents the independently
 runnable Global role, its generated contract and client. The bundled cloud profile uses
 [one Portal sign-in](docs/decisions/0037-single-portal-login.md) with separate Global/Region

@@ -4,7 +4,9 @@
 
 Give your agent a place to work with files and data across sessions. Connect Codex CLI, Claude Code, Pi, or another external agent with scoped access, then reopen the saved work in Studio. Studio and agents use the same Rust API.
 
-AgentSpace currently provides PostgreSQL-compatible databases, persistent File Systems, and resource/action permissions through Workspace Keys. Agents run in their own tools. The optional [Raft mode](docs/raft-agents.md) adds verified Human/Agent identities, explicit admission and exact resource grants; it requires its own App and backend configuration. Online status, hosted agent execution, Runs, and Memory are not implemented.
+AgentSpace currently provides PostgreSQL-compatible databases, persistent File Systems, and resource/action permissions through Workspace Keys. Agents run in their own tools. Agent identity, online status, hosted agent execution, Runs, and Memory are not implemented.
+
+The Raft identity implementation from PR 267 is withdrawn pending independent and owner review. Its published OpenAPI declarations remain reserved for compatibility, but Raft login, actions, governance and the Raft Console are unavailable in this revision. Existing Owner and Workspace Key SQL request/status APIs and durable deduplication records remain supported; rollback does not erase operation identities or resource data.
 
 ## Get your first result
 

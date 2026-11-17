@@ -1,4 +1,4 @@
-//! The optional federated API uses its own cookie, never legacy Owner/Key authority.
+//! Reserved published contracts; Raft runtime is withdrawn pending review. See README.
 use super::*;
 
 fn parameter(name: &str, location: &str, required: bool) -> Value {

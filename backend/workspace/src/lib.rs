@@ -26,22 +26,10 @@ pub enum Credential {
 /// lease alive; control activation/revocation drains such leases before acknowledging apply.
 pub trait ScopedAuthorization: Send + Sync {
     fn workspace_id(&self) -> &str;
-    /// Set only by the trusted federated authenticator after live identity and policy checks.
-    fn federated(&self) -> bool {
-        false
-    }
-
     /// Only the trusted authenticator may expose a verified Key identifier.
     fn workspace_key_id(&self) -> Option<&str> {
         None
     }
-    fn history_actor(&self) -> Option<HistoryActor> {
-        self.workspace_key_id().map(|id| HistoryActor {
-            kind: observability::ActorKind::WorkspaceKey,
-            id: id.into(),
-        })
-    }
-
     /// Prepare the trusted time source after asynchronous I/O and before a synchronous
     /// transaction check. The snapshot still enforces the actual credential expiry.
     fn prepare_snapshot(
@@ -292,16 +280,12 @@ fn history_actor_from_principal(
             ),
         });
     }
-    let actor = match credential {
-        Credential::Scoped(authorization) => authorization.history_actor(),
-        Credential::Bearer(_) => Some(HistoryActor {
-            kind: observability::ActorKind::WorkspaceKey,
-            id: principal.id.clone(),
-        }),
+    let id = match credential {
+        Credential::Scoped(authorization) => authorization.workspace_key_id(),
+        Credential::Bearer(_) => Some(principal.id.as_str()),
         _ => None,
     }
     .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
-    let id = actor.id.as_str();
     if id.is_empty()
         || id.len() > 128
         || !id
@@ -310,24 +294,15 @@ fn history_actor_from_principal(
     {
         return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
     }
-    Ok(actor)
+    Ok(HistoryActor {
+        kind: observability::ActorKind::WorkspaceKey,
+        id: id.to_owned(),
+    })
 }
 
 impl Workspace {
     async fn authorize_managed(&self, credential: &Credential) -> Result<()> {
         if self.managed {
-            if let Credential::Scoped(authorization) = credential
-                && authorization.federated()
-            {
-                let marker = self.repository.get("ownership/federated").await?;
-                if marker["value"]["workspaceId"] != self.repository.workspace_id()
-                    || marker["value"]["regionId"] != self.repository.authority_id()
-                    || authorization.workspace_id() != self.repository.workspace_id()
-                {
-                    return Err(reject(401, "INVALID_CREDENTIAL"));
-                }
-                return Ok(());
-            }
             let (owner, generation) = self.repository.managed_owner().await?;
             match credential {
                 Credential::SessionOwner {

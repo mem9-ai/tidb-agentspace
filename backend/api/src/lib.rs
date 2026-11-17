@@ -18,7 +18,6 @@ mod openapi;
 pub mod policy_command;
 pub mod policy_transport;
 pub mod portal_ticket;
-pub mod raft_auth;
 pub mod region_connection;
 pub mod region_security;
 pub mod regional_account;
@@ -818,7 +817,7 @@ async fn handle(
 }
 async fn dispatch(
     mut app: App,
-    mut request: Request,
+    request: Request,
     cancellation: tokio_util::sync::CancellationToken,
     request_id: uuid::Uuid,
     started_at: chrono::DateTime<chrono::Utc>,
@@ -832,66 +831,6 @@ async fn dispatch(
         .unwrap_or_else(|| request.uri().path().to_owned());
     let method = request.method().clone();
     let headers = request.headers().clone();
-    if let Some(tail) = path.strip_prefix("/api/federated/workspaces/") {
-        let (workspace, route) = tail
-            .split_once('/')
-            .ok_or_else(|| reject(404, "NOT_FOUND"))?;
-        if !uuid::Uuid::parse_str(workspace).is_ok_and(|id| id.to_string() == workspace)
-            || request
-                .headers()
-                .get_all("x-agentspace-policy")
-                .iter()
-                .count()
-                != 1
-            || headers.contains_key("cookie")
-        {
-            return Err(reject(401, "INVALID_CREDENTIAL"));
-        }
-        let proof = headers
-            .get("x-agentspace-policy")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| reject(401, "INVALID_CREDENTIAL"))?;
-        let access = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .filter(|v| !v.is_empty() && v.len() <= 16384 && !v.chars().any(char::is_whitespace))
-            .ok_or_else(|| reject(401, "INVALID_CREDENTIAL"))?;
-        let security = app
-            .security
-            .as_ref()
-            .ok_or_else(|| reject(404, "NOT_FOUND"))?;
-        let creation = if method == Method::POST && route == "resources" {
-            let body = std::mem::replace(request.body_mut(), axum::body::Body::empty());
-            let bytes = to_bytes(body, 65536)
-                .await
-                .map_err(|_| reject(413, "BODY_TOO_LARGE"))?;
-            let value: Value =
-                serde_json::from_slice(&bytes).map_err(|_| reject(400, "INVALID_JSON"))?;
-            let kind = value["kind"]
-                .as_str()
-                .ok_or_else(|| reject(400, "INVALID_KIND"))?
-                .to_owned();
-            *request.body_mut() = axum::body::Body::from(bytes);
-            Some(kind)
-        } else {
-            None
-        };
-        app.token_credential = Some(
-            security
-                .authenticate_federated(
-                    workspace,
-                    proof,
-                    access,
-                    method.as_str(),
-                    route,
-                    creation.as_deref(),
-                )
-                .await?,
-        );
-        path = format!("/api/v1/workspaces/{workspace}/{route}");
-    }
-
     if let Some(route) = path.strip_prefix("/api/v1/agent-csv/") {
         return agent_csv::handle(&app, route, request).await;
     }
@@ -1128,9 +1067,7 @@ async fn dispatch(
                 .get("authorization")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.strip_prefix("Bearer "));
-            let key = if let Some(value) = &app.token_credential {
-                value.clone()
-            } else if let Some(security) = &app.security
+            let key = if let Some(security) = &app.security
                 && let Some(token) = token.filter(|v| v.split('.').count() == 3)
             {
                 let value = security.authenticate(workspace_id, token).await?;
@@ -1635,7 +1572,6 @@ async fn dispatch(
         let kind = if matches!(
             actor.kind,
             workspace_domain::observability::ActorKind::WorkspaceKey
-                | workspace_domain::observability::ActorKind::Agent
         ) {
             "api"
         } else if app.current_guest.is_some() {

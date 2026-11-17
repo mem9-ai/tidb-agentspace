@@ -1304,6 +1304,44 @@ async fn resource_pages_and_indexes_support_large_workspaces() -> Result<()> {
 
 #[tokio::test]
 #[ignore = "requires isolated RustFS and built native binaries"]
+async fn query_request_audit_keeps_resource_target_and_excludes_read_only_requests() -> Result<()> {
+    let f = Workspaces::start(false, false).await?;
+    let body = json!({"resourceId":"db_pg","sql":"SELECT 1 AS audit_sql_canary","requestId":uuid::Uuid::new_v4().to_string()});
+    let response = f
+        .owner(0, Method::POST, "/query-requests")
+        .json(&body)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200);
+    let id = response.headers()["x-request-id"].to_str()?;
+    let (history, rows) = history_rows(&f, "/audit-history", id, 2).await?;
+    assert_eq!(rows[0]["action"], "query.execute");
+    assert_eq!(rows[0]["outcome"], "succeeded");
+    assert_eq!(rows[0]["target"], json!({"type":"database","id":"db_pg"}));
+    assert!(!history.to_string().contains("audit_sql_canary"));
+    let key = f
+        .create_key(0, "read-only-query", &["queries:read"], &["db_pg"])
+        .await?;
+    let token = f.exchange(0, key["secret"].as_str().unwrap()).await?;
+    for owner in [true, false] {
+        let request = if owner {
+            f.owner(0, Method::POST, "/query-requests")
+        } else {
+            f.agent(0, Method::POST, "/query-requests", Some(&token))
+        };
+        let response = request.json(&json!({"resourceId":"db_pg","sql":"SELECT 1","requestId":uuid::Uuid::new_v4().to_string(),"readOnly":owner})).send().await?;
+        assert_eq!(response.status(), 200);
+        let id = response.headers()["x-request-id"].to_str()?;
+        let (_, rows) = history_rows(&f, "/request-history", id, 1).await?;
+        assert_eq!(rows[0]["operation"], "query");
+        let (_, audit) = history_rows(&f, "/audit-history", id, 0).await?;
+        assert!(audit.is_empty());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires isolated RustFS and built native binaries"]
 async fn query_request_deduplication_survives_retries_restart_and_unknown_provider_outcome()
 -> Result<()> {
     let mut f = Workspaces::start(false, false).await?;
