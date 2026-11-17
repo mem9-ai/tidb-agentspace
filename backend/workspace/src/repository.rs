@@ -2,7 +2,6 @@ mod event_index;
 mod file_index;
 mod file_paths;
 pub mod observability;
-mod query_requests;
 mod resource_index;
 mod sales_samples;
 mod setup_attempts;

@@ -63,14 +63,6 @@ pub struct Connector {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Frame {
-    Federation {
-        request_id: String,
-        workspace: workspace_identity::federation::Workspace,
-    },
-    Federated {
-        request_id: String,
-        workspace: Option<workspace_identity::federation::Workspace>,
-    },
     Attribution {
         request_id: String,
         workspace: String,
@@ -117,11 +109,6 @@ enum Frame {
 }
 
 enum Request {
-    Federation {
-        workspace: workspace_identity::federation::Workspace,
-        reply:
-            oneshot::Sender<workspace_contracts::Result<workspace_identity::federation::Workspace>>,
-    },
     Attribution {
         workspace: String,
         attribution: crate::analytics::Attribution,
@@ -159,24 +146,6 @@ fn unavailable() -> ServiceError {
 }
 
 impl Hub {
-    pub async fn federation(
-        &self,
-        workspace: &workspace_identity::federation::Workspace,
-    ) -> workspace_contracts::Result<workspace_identity::federation::Workspace> {
-        let sender = self.sender(&workspace.region_id).await?;
-        let (reply, result) = oneshot::channel();
-        sender
-            .try_send(Request::Federation {
-                workspace: workspace.clone(),
-                reply,
-            })
-            .map_err(|_| unavailable())?;
-        tokio::time::timeout(Duration::from_secs(15), result)
-            .await
-            .map_err(|_| unavailable())?
-            .map_err(|_| unavailable())?
-    }
-
     pub async fn attribute(
         &self,
         region: &str,
@@ -497,16 +466,6 @@ async fn serve_region<S: AsyncRead + AsyncWrite + Unpin>(
                     }.await;
                     let failed = result.is_err(); let _ = reply.send(result.map_err(|_| unavailable())); failed
                 }
-                Request::Federation { workspace,reply } => {
-                    let result=async {
-                        ensure!(workspace.region_id==region_id,"wrong Region");
-                        write_frame(&mut writer,&Frame::Federation {request_id:request_id.clone(),workspace:workspace.clone()}).await?;
-                        let Frame::Federated {request_id:observed,workspace:Some(actual)}=tokio::time::timeout(Duration::from_secs(12),read_frame(&mut reader)).await?? else {bail!("federation rejected")};
-                        ensure!(observed==request_id&&actual==workspace,"federation acknowledgement mismatch");
-                        Ok::<_,anyhow::Error>(actual)
-                    }.await;
-                    let failed=result.is_err();let _=reply.send(result.map_err(|_|unavailable()));failed
-                }
                 Request::Initialize { command, reply } => {
                     let result = async {
                         let expected = command.registration.clone();
@@ -656,20 +615,6 @@ pub async fn connect(
                             &Frame::Result {
                                 request_id,
                                 receipt,
-                            },
-                        )
-                        .await?;
-                    }
-                    Frame::Federation {
-                        request_id,
-                        workspace,
-                    } if Uuid::parse_str(&request_id).is_ok() => {
-                        let workspace = installer.federation(&workspace).await.ok();
-                        write_frame(
-                            &mut writer,
-                            &Frame::Federated {
-                                request_id,
-                                workspace,
                             },
                         )
                         .await?;

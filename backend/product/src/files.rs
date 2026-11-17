@@ -225,9 +225,7 @@ impl Product {
                     let content = file["content"].as_str().unwrap_or("");
                     return Ok((
                         200,
-                        Reply::Json(
-                            json!({"size":content.len(),"content":content,"version":local_version(&file)}),
-                        ),
+                        Reply::Json(json!({"size":content.len(),"content":content})),
                     ));
                 }
                 return Err(err(400, "LOCAL_FILE_API"));

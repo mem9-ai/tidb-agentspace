@@ -249,7 +249,6 @@ async fn all_regional_portal_operations_match_their_live_schemas() -> Result<()>
             "tableName",
             "preparationId",
             "attemptId",
-            "requestId",
         ] {
             if let Some(value) = case[param].as_str() {
                 route = route.replace(&format!("{{{param}}}"), value);
@@ -343,12 +342,6 @@ async fn all_regional_portal_operations_match_their_live_schemas() -> Result<()>
             saved.insert(save.to_owned(), result);
         }
     }
-    assert_eq!(saved["queryRequest"]["operation"]["state"], "succeeded");
-    assert_eq!(saved["queryStatus"], saved["queryRequest"]);
-    assert_eq!(
-        saved["queryStatus"]["result"]["rows"],
-        json!([{"?column?":1}])
-    );
     assert_eq!(saved["salesSample"]["data"]["status"], "failed");
     assert_eq!(saved["salesSample"]["data"]["errorCode"], "FREE_TIER_LIMIT");
     assert_eq!(

@@ -73,88 +73,18 @@ impl Product {
             return Err(err(404, "NOT_FOUND"));
         }
         let sql = text(input, "sql").map_err(|_| err(400, "INVALID_SQL"))?;
-        if input.get("requestId").is_some() && (sql.trim().is_empty() || sql.len() > 65536) {
-            return Err(err(400, "INVALID_SQL"));
-        }
         if read_only {
             read_only::validate(sql)?;
         }
         if input.as_object().is_none_or(|fields| {
-            fields.keys().any(|key| {
-                !matches!(
-                    key.as_str(),
-                    "resourceId" | "sql" | "readOnly" | "requestId"
-                )
-            })
+            fields
+                .keys()
+                .any(|key| !matches!(key.as_str(), "resourceId" | "sql" | "readOnly"))
         }) {
             return Err(err(400, "INVALID_BODY"));
         }
         self.context(credential, scope, Some((id, None))).await?;
-        let request_id = input
-            .get("requestId")
-            .map(|v| v.as_str().ok_or_else(|| err(400, "INVALID_REQUEST_ID")))
-            .transpose()?;
-        let repository = self.workspace.repository();
-        if let Some(request_id) = request_id {
-            let content = fingerprint(
-                &serde_json::to_vec(&json!({"resourceId":id,"sql":sql,"readOnly":read_only}))
-                    .map_err(|_| err(400, "INVALID_BODY"))?,
-            )?;
-            let (record, fresh) = repository
-                .begin_query_request(
-                    id,
-                    &p.id,
-                    request_id,
-                    &content,
-                    chrono::Utc::now().timestamp(),
-                )
-                .await?;
-            if !fresh {
-                self.context(credential, scope, Some((id, None))).await?;
-                return Ok(query_observation(&record));
-            }
-        }
-        self.context(credential, scope, Some((id, None))).await?;
-        let execution = if request_id.is_some() {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(16),
-                self.execute_database(&resource, sql, read_only),
-            )
-            .await
-        } else {
-            Ok(self.execute_database(&resource, sql, read_only).await)
-        };
-        let result = match execution {
-            Ok(Ok(result)) => result,
-            other => {
-                if let Some(request_id) = request_id {
-                    let _ = repository
-                        .finish_query_request(
-                            id,
-                            &p.id,
-                            request_id,
-                            None,
-                            Some("QUERY_OUTCOME_UNKNOWN"),
-                        )
-                        .await;
-                    return Err(err(503, "QUERY_OUTCOME_UNKNOWN"));
-                }
-                return match other {
-                    Ok(Err(error)) => Err(error),
-                    _ => Err(err(503, "QUERY_OUTCOME_UNKNOWN")),
-                };
-            }
-        };
-        let operation = if let Some(request_id) = request_id {
-            Some(
-                repository
-                    .finish_query_request(id, &p.id, request_id, Some(&result), None)
-                    .await
-                    .map_err(|_| err(503, "QUERY_OUTCOME_UNKNOWN"))?,
-            )
-        } else {
-            None
-        };
+        let result = self.execute_database(&resource, sql, read_only).await?;
         self.workspace
             .repository()
             .resource_transaction(
@@ -180,30 +110,7 @@ impl Product {
             )
             .await
             .map_err(|_| err(500, "QUERY_RECORD_FAILED"))?;
-        Ok(operation.as_ref().map(query_observation).unwrap_or(result))
-    }
-    pub async fn query_status(
-        &self,
-        credential: &Credential,
-        resource: &str,
-        request_id: &str,
-    ) -> Result<Value> {
-        let (actor, _) = self
-            .context(credential, "queries:read", Some((resource, None)))
-            .await?;
-        let record = self
-            .workspace
-            .repository()
-            .query_request(
-                resource,
-                &actor.id,
-                request_id,
-                chrono::Utc::now().timestamp(),
-            )
-            .await?;
-        self.context(credential, "queries:read", Some((resource, None)))
-            .await?;
-        Ok(query_observation(&record))
+        Ok(result)
     }
     pub(super) async fn browse(
         &self,
@@ -377,12 +284,4 @@ fn demo_columns() -> Vec<&'static str> {
 }
 fn demo_rows(state: &Value) -> Value {
     json!([(1,"research-agent","context.loaded"),(2,"coding-agent","memory.recalled"),(3,"research-agent","output.saved")].iter().map(|(id,agent,event)|json!({"id":id,"agent":agent,"event":event,"status":"completed","created_at":state["workspace"]["createdAt"]})).collect::<Vec<_>>())
-}
-
-fn query_observation(record: &Value) -> Value {
-    let stale = record["state"] == "running"
-        && record["startedAt"]
-            .as_i64()
-            .is_some_and(|start| chrono::Utc::now().timestamp().saturating_sub(start) > 30);
-    json!({"operation":{"requestId":record["requestId"],"state":if stale{json!("outcomeUnknown")}else{record["state"].clone()},"errorCode":record["errorCode"]},"result":record["result"]})
 }

@@ -3,20 +3,14 @@ use serde_json::{Value, json};
 
 mod discovery;
 mod keys;
-mod raft;
 mod schemas;
 mod sessions;
 
 pub(crate) fn paths() -> Value {
-    merge([
-        discovery::paths(),
-        sessions::paths(),
-        keys::paths(),
-        raft::paths(),
-    ])
+    merge([discovery::paths(), sessions::paths(), keys::paths()])
 }
 pub(crate) fn schemas() -> Value {
-    merge([schemas::schemas(), raft::schemas()])
+    schemas::schemas()
 }
 
 pub(super) fn workspace_id_parameter() -> Value {
@@ -73,7 +67,6 @@ pub(super) fn responses(overrides: Value) -> Value {
 
 pub(super) fn security_schemes() -> Value {
     json!({
-        "raftSession": {"type":"apiKey","in":"cookie","name":"aw_raft_session","description":"Encrypted service session; current external identity and exact local permissions are checked on every request."},
         "globalOwner": json!({"type": "apiKey", "in": "cookie", "name": "aw_global_owner"}),
         "globalAccess": json!({"type": "http", "scheme": "bearer", "bearerFormat": "Global JWT"}),
         "workspaceKey": json!({

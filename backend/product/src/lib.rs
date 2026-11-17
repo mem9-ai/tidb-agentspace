@@ -260,8 +260,6 @@ impl Product {
         let p = self.workspace.authenticate(&credential).await?;
         let actor_value = if p.owner {
             actor.to_owned()
-        } else if matches!(&credential,Credential::Scoped(auth) if auth.federated()) {
-            format!("principal:{}", p.id)
         } else {
             format!("key:{}", p.id)
         };
@@ -436,9 +434,6 @@ impl Product {
                     _ => return Err(err(400, "INVALID_KIND")),
                 };
                 let mut resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"regionId":authority,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
-                if matches!(&credential,Credential::Scoped(auth) if auth.federated()) {
-                    resource["createdBy"] = json!(p.id);
-                }
                 if initial {
                     resource["isDefault"] = json!(true);
                 }
@@ -523,20 +518,7 @@ impl Product {
                     json!({"data":data,"mode":"demo","queryCount":count,"queryCountScope":if p.has("*"){"workspace"}else{"page"},"nextCursor":next}),
                 )
             }
-            ("POST", "/queries" | "/query-requests") => {
-                if (route == "/queries" && input.get("requestId").is_some())
-                    || (route == "/query-requests" && input["requestId"].as_str().is_none())
-                {
-                    return Err(err(400, "INVALID_BODY"));
-                }
-                let result = self.query(&credential, &p, &input).await?;
-                let status = if result["operation"]["state"] == "running" {
-                    202
-                } else {
-                    200
-                };
-                return Ok((status, Reply::Json(result)));
-            }
+            ("POST", "/queries") => Reply::Json(self.query(&credential, &p, &input).await?),
             ("GET", "/file-analyses/capabilities")
             | ("GET", "/files/tabular-preview")
             | ("POST", "/file-analyses") => Reply::Json(
@@ -608,14 +590,6 @@ impl Product {
                     return self
                         .preparation_request(&credential, actor, method, parts[0], parts[1])
                         .await;
-                }
-                if let ["resources", resource, "query-requests", request] = parts.as_slice()
-                    && method == "GET"
-                {
-                    return Ok((
-                        200,
-                        Reply::Json(self.query_status(&credential, resource, request).await?),
-                    ));
                 }
                 if parts.len() >= 3 && parts[0] == "resources" && parts[2] == "setup-attempts" {
                     return self

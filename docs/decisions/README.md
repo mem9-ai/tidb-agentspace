@@ -120,8 +120,6 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0061: Public compatibility](0061-public-compatibility.md) — supported clients, discovery and data upgrades.
 
-- [0062: Federated Raft access](0062-federated-raft-access.md) — optional verified Human/Agent identities, explicit admission and exact grants.
-
 ## Deprecated decisions
 
 See the [archive index](../deprecated/README.md) for replacement designs and historical verification reports.

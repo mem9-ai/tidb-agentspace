@@ -112,19 +112,6 @@ fn certificates(path: &Path) -> Result<Vec<CertificateDer<'static>>> {
 /// A Region application boundary drains local request leases, validates concrete ownership,
 /// stores the signed policy and its security checkpoint before acknowledging application.
 pub trait PolicyInstaller: Send + Sync {
-    fn federation<'a>(
-        &'a self,
-        _workspace: &'a workspace_identity::federation::Workspace,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = workspace_contracts::Result<workspace_identity::federation::Workspace>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async { Err(ServiceError::new(503, "FEDERATION_UNAVAILABLE")) })
-    }
     fn apply<'a>(
         &'a self,
         command: &'a str,
@@ -204,28 +191,6 @@ async fn receive(
     }
 }
 
-async fn receive_federation(
-    State(state): State<StateData>,
-    Json(workspace): Json<workspace_identity::federation::Workspace>,
-) -> Response {
-    let Ok(_permit) = state.capacity.try_acquire() else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    };
-    let Some(installer) = &state.installer else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    };
-    match installer.federation(&workspace).await {
-        Ok(installed) => (
-            StatusCode::ACCEPTED,
-            Json(serde_json::json!({"data":installed})),
-        )
-            .into_response(),
-        Err(error) => StatusCode::from_u16(error.status)
-            .unwrap_or(StatusCode::SERVICE_UNAVAILABLE)
-            .into_response(),
-    }
-}
-
 pub struct PolicyControlServer {
     tls: ServerTls,
     config: Arc<rustls::ServerConfig>,
@@ -299,10 +264,6 @@ impl PolicyControlServer {
     ) -> Result<()> {
         let app = Router::new()
             .route(CONTROL_PATH, post(receive))
-            .route(
-                "/internal/v1/federated-workspace-policies",
-                post(receive_federation),
-            )
             .layer(DefaultBodyLimit::max(MAX_BODY))
             .layer(middleware::from_fn(bounded_request))
             .with_state(self.state);
@@ -386,44 +347,6 @@ impl PolicyControlClient {
             endpoint: url.join(CONTROL_PATH)?,
             region_id: region_id.into(),
         })
-    }
-
-    pub async fn federation(
-        &self,
-        workspace: &workspace_identity::federation::Workspace,
-    ) -> workspace_contracts::Result<workspace_identity::federation::Workspace> {
-        let uncertain = || ServiceError::new(503, "POLICY_DELIVERY_UNKNOWN");
-        if workspace.region_id != self.region_id {
-            return Err(ServiceError::new(400, "INVALID_REGION"));
-        }
-        let url = self
-            .endpoint
-            .join("/internal/v1/federated-workspace-policies")
-            .map_err(|_| uncertain())?;
-        let mut response = self
-            .client
-            .post(url)
-            .json(workspace)
-            .send()
-            .await
-            .map_err(|_| uncertain())?;
-        if response.status() != StatusCode::ACCEPTED {
-            return Err(uncertain());
-        }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| uncertain())? {
-            if bytes.len() + chunk.len() > 4096 {
-                return Err(uncertain());
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| uncertain())?;
-        let observed: workspace_identity::federation::Workspace =
-            serde_json::from_value(body["data"].clone()).map_err(|_| uncertain())?;
-        if observed != *workspace {
-            return Err(uncertain());
-        }
-        Ok(observed)
     }
 
     /// An error after sending has an unknown outcome. Callers reconcile using the same

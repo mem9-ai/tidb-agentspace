@@ -267,32 +267,6 @@
     "body": { "resourceId": "db_memory", "sql": "SELECT 1" }
   },
   {
-    "operation": "createQueryRequest",
-    "save": "queryRequest",
-    "status": 200,
-    "body": {
-      "resourceId": "db_memory",
-      "requestId": "367f76b9-0fae-45ab-86e6-c205363ab623",
-      "sql": "SELECT 1"
-    }
-  },
-  {
-    "operation": "getQueryRequest",
-    "save": "queryStatus",
-    "status": 200,
-    "resourceId": "db_memory",
-    "requestId": "367f76b9-0fae-45ab-86e6-c205363ab623"
-  },
-  {
-    "operation": "createQueryRequest",
-    "status": 409,
-    "body": {
-      "resourceId": "db_memory",
-      "requestId": "367f76b9-0fae-45ab-86e6-c205363ab623",
-      "sql": "SELECT 2"
-    }
-  },
-  {
     "operation": "createResourceSetupAttempt",
     "save": "setup",
     "status": 201,

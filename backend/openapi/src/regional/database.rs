@@ -7,8 +7,6 @@ pub(super) fn paths() -> Value {
         "/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}/rows": {"parameters": [workspace_id(), resource_id_parameter()], "get": get_database_table_rows()},
         "/workspaces/{workspaceId}/database-import-preparations": {"post": create_database_import_preparation(), "parameters": [workspace_id()]},
         "/workspaces/{workspaceId}/database-imports": {"post": create_database_import(), "parameters": [workspace_id()]},
-        "/workspaces/{workspaceId}/query-requests": {"post":create_query_request(),"parameters":[workspace_id()]},
-        "/workspaces/{workspaceId}/resources/{resourceId}/query-requests/{requestId}": {"parameters":[workspace_id(),resource_id_parameter(),{"name":"requestId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"get":workspace_operation("getQueryRequest","Observe your retained SQL request without submitting SQL","queries:read or queries:execute"," Requires current exact resource access. Missing records never authorize replay.",json!({"responses":responses(json!({"200":response("Observed",reference("QueryRequest"))}))}))},
         "/workspaces/{workspaceId}/queries": {"post": execute_query(), "parameters": [workspace_id()]},
         "/workspaces/{workspaceId}/database-import-preparations/{preparationId}": {
             "parameters": [workspace_id(), preparation_id_parameter()],
@@ -195,19 +193,6 @@ fn delete_database_import_preparation() -> Value {
             "responses": responses(json!({
                 "204": {"description": "Review cancelled; no response body. Already consumed reviews return 409."},
             })),
-        }),
-    )
-}
-
-fn create_query_request() -> Value {
-    workspace_operation(
-        "createQueryRequest",
-        "Submit SQL with durable request deduplication",
-        "queries:execute for writes; queries:read for read-only SQL",
-        " Retain requestId before sending. The ID binds this principal, Workspace, resource and request. Same content never executes twice; changed reuse is 409. Intent persists before provider submission. Lost provider response is outcomeUnknown; inspect the original request instead of creating a new ID. Results are retained encrypted, limited to 1 MiB/1,000 rows; SQL is limited to 64 KiB and 15 seconds. Request identities have no replay-enabling expiry.",
-        json!({
-            "requestBody":request(closed_object([("resourceId",string()),("requestId",json!({"type":"string","format":"uuid"})),("sql",json!({"type":"string","minLength":1,"maxLength":65536}))])),
-            "responses":responses(json!({"200":response("Terminal observation",reference("QueryRequest")),"202":response("Existing request is still running",reference("QueryRequest"))}))
         }),
     )
 }

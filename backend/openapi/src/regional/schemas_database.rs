@@ -7,7 +7,6 @@ pub(super) fn schemas() -> Value {
         "DatabaseImportInput": database_import_input(),
         "DatabaseImportResult": database_import_result(),
         "QueryResult": query_result(),
-        "QueryRequest":closed_object([("operation",closed_object([("requestId",string()),("state",json!({"enum":["running","succeeded","failed","outcomeUnknown"]})),("errorCode",json!({"type":["string","null"]}))])),("result",json!({"oneOf":[reference("QueryResult"),{"type":"null"}]}))]),
         "DatabaseTable": database_table(),
         "TableList": table_list(),
         "TableDetail": table_detail(),
