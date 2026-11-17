@@ -22,8 +22,31 @@ The trusted classifier and explicit native-backed applicability evidence are des
 
 An API mock verifies the Console's interaction contract, not backend authorization, provider
 compatibility or cloud connectivity. Keep native coverage authoritative for those claims.
-Native browser end-to-end provider coverage is future work; the current smoke suite does
-not provision real cloud resources or start a second business backend.
+The ordinary smoke suite does not provision cloud resources or start a business backend.
+The focused native journey below connects the built Console to real native services;
+its external identity provider remains a fixture.
+
+### Console with native Raft services
+
+After preparing the native dependencies, building the binaries/examples and Console, and
+installing Playwright Chromium, run:
+
+```sh
+cargo run --locked -p workspace-test-support --example raft_browser
+```
+
+This separate, opt-in command starts isolated RustFS, Global, Region and Meta services, plus
+a loopback HTTPS gateway for the built Console. It uses the existing public OIDC fixture
+for Human PKCE login and no-state Agent login; fixture consent is completed programmatically.
+No browser API responses or business operations are mocked. The temporary certificate is
+accepted only by the test browser, without changing system trust.
+
+All four theme/viewport combinations create a Workspace and a real local file, approve an
+Agent, verify admission grants no data, share the exact resource read-only, reject writes,
+and revoke access while retaining the Human's file. The command fails on any assertion or
+timeout and shuts down its owned processes/storage. Native backend acceptance remains
+independent of Node/Chromium installation. This does not establish released Raft CLI,
+live Raft, Cloud provider, UTC clock health or whole-store recovery compatibility.
 
 ## Current portable smoke suite
 

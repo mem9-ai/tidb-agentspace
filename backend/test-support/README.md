@@ -11,3 +11,7 @@ cargo test --locked -p workspace-test-support --test contract -- --ignored
 ```
 
 Choose a [test target](tests/) for the boundary you changed. Many process tests are ignored during ordinary Cargo unit tests and are selected explicitly by [the acceptance runner](../build-tools/src/bin/workspace-verify.rs). The [verification guide](../../docs/standards/openapi-verification.md) lists profiles and their scope.
+
+For the separately runnable Console → native services journey, follow
+[native browser verification](../../docs/standards/browser-verification.md#console-with-native-raft-services).
+It requires the built Console and Playwright Chromium in addition to the native prerequisites.
