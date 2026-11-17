@@ -1291,7 +1291,11 @@ async fn dispatch(
         (method.as_str(), route),
         (
             "POST",
-            "/queries" | "/database-imports" | "/result-exports" | "/file-exports"
+            "/queries"
+                | "/query-requests"
+                | "/database-imports"
+                | "/result-exports"
+                | "/file-exports"
         ) | ("PUT", "/files")
     ) {
         Some(body())
@@ -1316,7 +1320,7 @@ async fn dispatch(
         } else {
             analytics::operation(method.as_str(), route)
         };
-    let audit_action = if route == "/queries" && !write_capable {
+    let audit_action = if matches!(route, "/queries" | "/query-requests") && !write_capable {
         None
     } else {
         history_audit::action(method.as_str(), route, audit_input)
