@@ -70,6 +70,10 @@ checked by `scripts/check-trial-installer.mjs`; maintain only the canonical asse
 Keep existing local installation and credential locations to preserve cross-agent
 identity. A public name correction must not create a second key or lose reports.
 
+The skill's `workspace-api.md` and the Console's generated agent instructions are two
+renderings of one connection procedure. Change them in the same commit, including the
+endpoint-trust rules, so an agent cannot be taught two different answers.
+
 ## Reuse Python and secure storage
 
 Keep one Python helper and the native Keychain,

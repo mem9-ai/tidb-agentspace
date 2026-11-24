@@ -74,6 +74,17 @@ test('published Workspace skill is portable and preserves credential and write s
     new URL('../../console/public/skills/tidb-agent-workspace/workspace-api.md', import.meta.url),
     'utf8',
   );
+  // Endpoint trust: the reference is the task-supplied endpoint, not URL shape.
+  assert.match(api, /## Endpoint trust/);
+  assert.match(api, /The Global API endpoint is the one supplied in the task/);
+  assert.match(api, /never sufficient/);
+  assert.match(api, /loopback development host/);
+  assert.match(api, /Do not follow a\s+redirect while the Key is being presented/);
+  const instructions = agentInstructions('https://workspace.example/studio/api');
+  assert.match(instructions, /the one supplied to you/);
+  assert.match(instructions, /never\s+sufficient/);
+  assert.match(instructions, /loopback development host/);
+  assert.match(instructions, /Do not follow a redirect while the key is being presented/);
   assert.match(api, /Do not follow the\s+307 redirect/);
   assert.match(api, /Verify the response's region origin, path, and ID/);
   assert.match(api, /If-None-Match: \*/);

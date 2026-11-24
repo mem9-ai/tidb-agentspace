@@ -11,7 +11,7 @@
 # The values are checksums of the shipped skill assets, not credentials:
 #
 #   sha256sum console/public/skills/drive9-workspace/workspace-api.md
-#   # 93d3acc36e4f55d34bf4700a3634373cfbedd96514a12171af51f9e44cb4ed0b
+#   # 458eb159803bd65a92cbaa86caac5933bf7e859ce048e2510dde67d79e2e313b
 #
 # which reproduces the reported value exactly, and scripts/check-trial-installer.mjs
 # verifies the same digests against the assets independently.
