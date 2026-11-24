@@ -74,6 +74,11 @@ The skill's `workspace-api.md` and the Console's generated agent instructions ar
 renderings of one connection procedure. Change them in the same commit, including the
 endpoint-trust rules, so an agent cannot be taught two different answers.
 
+An installed copy only picks up a `workspace-api.md` change when the official installer runs;
+`SKILL.md` names that as the trigger, because no Python-asset trigger fires for the document
+alone. A version check for the skill document itself is a follow-up, and the published artifact
+is the authoritative copy in the meantime.
+
 ## Reuse Python and secure storage
 
 Keep one Python helper and the native Keychain,

@@ -74,17 +74,22 @@ test('published Workspace skill is portable and preserves credential and write s
     new URL('../../console/public/skills/tidb-agent-workspace/workspace-api.md', import.meta.url),
     'utf8',
   );
-  // Endpoint trust: the reference is the task-supplied endpoint, not URL shape.
-  assert.match(api, /## Endpoint trust/);
-  assert.match(api, /The Global API endpoint is the one supplied in the task/);
-  assert.match(api, /never sufficient/);
-  assert.match(api, /loopback development host/);
-  assert.match(api, /Do not follow a\s+redirect while the Key is being presented/);
+  // Endpoint trust: one rule list, applied to both renderings of the procedure, so
+  // deleting a clause from either text fails here (ADR 0056 relies on this).
+  const rules = [
+    /the one supplied (?:in the task|to you)/,
+    /(?:present the key to that endpoint|send the key only there)/,
+    /user confirms? that origin in the conversation|needs the user to confirm it in the conversation/,
+    /never sufficient/,
+    /non-https endpoint is acceptable only on a loopback development host/,
+    /do not follow a redirect while the key is being presented/,
+    /stop and report the problem instead of sending the key (?:anywhere else|elsewhere)/,
+  ];
   const instructions = agentInstructions('https://workspace.example/studio/api');
-  assert.match(instructions, /the one supplied to you/);
-  assert.match(instructions, /never\s+sufficient/);
-  assert.match(instructions, /loopback development host/);
-  assert.match(instructions, /Do not follow a redirect while the key is being presented/);
+  for (const text of [api, instructions]) {
+    const flat = text.toLowerCase().replace(/\s+/g, ' ');
+    for (const rule of rules) assert.match(flat, rule);
+  }
   assert.match(api, /Do not follow the\s+307 redirect/);
   assert.match(api, /Verify the response's region origin, path, and ID/);
   assert.match(api, /If-None-Match: \*/);
