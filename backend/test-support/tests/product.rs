@@ -1345,6 +1345,47 @@ async fn query_request_audit_keeps_resource_target_and_excludes_read_only_reques
 async fn query_request_deduplication_survives_retries_restart_and_unknown_provider_outcome()
 -> Result<()> {
     let mut f = Workspaces::start(false, false).await?;
+    let read_key = f
+        .create_key(0, "preflight-reader", &["queries:read"], &["db_pg"])
+        .await?;
+    let read_token = f.exchange(0, read_key["secret"].as_str().unwrap()).await?;
+    for (sql, code, status) in [
+        ("", "INVALID_SQL", 400),
+        ("DELETE FROM example", "READ_ONLY_SQL_REQUIRED", 403),
+    ] {
+        let request = uuid::Uuid::new_v4().to_string();
+        let body = json!({"resourceId":"db_pg","sql":sql,"requestId":request});
+        assert_eq!(
+            expect(
+                f.agent(0, Method::POST, "/query-requests", Some(&read_token))
+                    .json(&body),
+                status
+            )
+            .await?["error"]["code"],
+            code
+        );
+        let route = format!("/resources/db_pg/query-requests/{request}");
+        expect(f.agent(0, Method::GET, &route, Some(&read_token)), 404).await?;
+        assert!(
+            !f.provider
+                .state
+                .lock()
+                .unwrap()
+                .statements
+                .iter()
+                .any(|s| s == sql)
+        );
+        let corrected = json!({"resourceId":"db_pg","sql":"SELECT 1 AS preflight_corrected","requestId":request});
+        assert_eq!(
+            expect(
+                f.agent(0, Method::POST, "/query-requests", Some(&read_token))
+                    .json(&corrected),
+                200
+            )
+            .await?["operation"]["state"],
+            "succeeded"
+        );
+    }
     let request = uuid::Uuid::new_v4().to_string();
     let sql = "SELECT 1 AS dedupe_marker";
     let body = json!({"resourceId":"db_pg","sql":sql,"requestId":request});

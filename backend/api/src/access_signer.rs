@@ -291,6 +291,72 @@ mod tests {
     }
 
     #[test]
+    fn federated_proof_admits_immediately_and_expires_under_declared_clock_error() {
+        let scopes = vec!["files:read".into()];
+        let verifier = verifier(IssuerKind::Global);
+        for global_error in -5..=5 {
+            for region_error in -5..=5 {
+                let observed = 1000 + global_error;
+                let mut issuance = issuance(&scopes);
+                issuance.grant_ref = "federated:fs_test";
+                issuance.key_expires_at = observed + crate::raft_auth::ADMISSION_SECONDS;
+                let token = signer(IssuerKind::Global)
+                    .sign(&issuance, observed)
+                    .unwrap();
+                assert!(
+                    verifier
+                        .verify_federated(&token.token, 1000 + region_error)
+                        .is_ok()
+                );
+                let expires_after = token.expires_at - 1000 - region_error;
+                assert!((40..=60).contains(&expires_after));
+                assert!(
+                    verifier
+                        .verify_federated(&token.token, token.expires_at - 1)
+                        .is_ok()
+                );
+                assert!(
+                    verifier
+                        .verify_federated(&token.token, token.expires_at)
+                        .is_err()
+                );
+                assert!(
+                    verifier
+                        .verify_federated(&token.token, 1060 + region_error)
+                        .is_err()
+                );
+                issuance.grant_expires_at = observed + 10;
+                let shorter = signer(IssuerKind::Global)
+                    .sign(&issuance, observed)
+                    .unwrap();
+                assert!(
+                    verifier
+                        .verify_federated(&shorter.token, observed + 10)
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn federated_admission_allowance_cannot_change_legacy_or_expiry_validation() {
+        let scopes = vec!["files:read".into()];
+        let signer = signer(IssuerKind::Global);
+        let verifier = verifier(IssuerKind::Global);
+        let mut issuance = issuance(&scopes);
+        let legacy = signer.sign(&issuance, 1005).unwrap();
+        assert!(verifier.verify(&legacy.token, 995).is_err());
+        assert!(verifier.verify_federated(&legacy.token, 995).is_err());
+        issuance.grant_ref = "federated:fs_test";
+        issuance.key_expires_at = 1055;
+        let proof = signer.sign(&issuance, 1005).unwrap();
+        assert!(verifier.verify(&proof.token, 995).is_err());
+        assert!(verifier.verify_federated(&proof.token, 994).is_err());
+        assert!(verifier.verify_federated(&proof.token, 995).is_ok());
+        assert!(verifier.verify_federated(&proof.token, 1055).is_err());
+    }
+
+    #[test]
     fn regional_signer_requires_family_and_never_outlives_it() {
         let scopes = vec!["files:read".into()];
         let mut issuance = issuance(&scopes);

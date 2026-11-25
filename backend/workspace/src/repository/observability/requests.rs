@@ -214,6 +214,8 @@ impl Repository {
             let actor = match entry.actor_kind {
                 ActorKind::Owner => "owner",
                 ActorKind::WorkspaceKey => "workspaceKey",
+                ActorKind::Human => "human",
+                ActorKind::Agent => "agent",
             };
             records.push((json!({
                 "id":Uuid::new_v4().to_string(),"requestId":entry.request_id.to_string(),
