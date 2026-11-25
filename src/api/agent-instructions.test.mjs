@@ -74,22 +74,51 @@ test('published Workspace skill is portable and preserves credential and write s
     new URL('../../console/public/skills/tidb-agent-workspace/workspace-api.md', import.meta.url),
     'utf8',
   );
-  // Endpoint trust: one rule list, applied to both renderings of the procedure, so
-  // deleting a clause from either text fails here (ADR 0056 relies on this).
-  const rules = [
-    /the one supplied (?:in the task|to you)/,
-    /(?:present the key to that endpoint|send the key only there)/,
-    /user confirms? that origin in the conversation|needs the user to confirm it in the conversation/,
-    /never sufficient/,
-    /non-https endpoint is acceptable only on a loopback development host/,
-    /do not follow a redirect while the key is being presented/,
-    /stop and report the problem instead of sending the key (?:anywhere else|elsewhere)/,
-  ];
+  // Endpoint trust: one row per rule, one cell per rendering, so a clause deleted
+  // from either text fails here and names the document it is missing from.
+  const flatten = (text) => text.toLowerCase().replace(/\s+/g, ' ');
   const instructions = agentInstructions('https://workspace.example/studio/api');
-  for (const text of [api, instructions]) {
-    const flat = text.toLowerCase().replace(/\s+/g, ' ');
-    for (const rule of rules) assert.match(flat, rule);
+  const rows = [
+    [
+      'the global api endpoint is the one supplied in the task',
+      'the api endpoint above is the one supplied to you',
+    ],
+    ['in production it is on `drive9.ai`', 'in production it is on drive9.ai'],
+    ['present the key to that endpoint', 'send the key only there'],
+    [
+      'present it to any other origin only after the user confirms that origin in the conversation',
+      'any other origin needs the user to confirm it in the conversation',
+    ],
+    ['never sufficient', 'never sufficient'],
+    [
+      'non-https endpoint is acceptable only on a loopback development host',
+      'non-https endpoint is acceptable only on a loopback development host',
+    ],
+    ['(`127.0.0.1`, `localhost`, `[::1]`), any port', '(127.0.0.1, localhost, [::1]), any port'],
+    [
+      'do not follow a redirect while the key is being presented',
+      'do not follow a redirect while the key is being presented',
+    ],
+    [
+      'stop and report the problem instead of sending the key anywhere else',
+      'stop and report the problem instead of sending the key elsewhere',
+    ],
+  ];
+  for (const [skillClause, consoleClause] of rows) {
+    assert.ok(flatten(api).includes(skillClause), `workspace-api.md: ${skillClause}`);
+    assert.ok(
+      flatten(instructions).includes(consoleClause),
+      `agentInstructions(): ${consoleClause}`,
+    );
   }
+  // SKILL.md triggers an installer re-run on a missing section, so the marker it
+  // names is read from that file and required in the document itself: a rename in
+  // either place fails here instead of silently firing the trigger forever.
+  const marker = /`workspace-api\.md` has no `(## [^`]+)` section/.exec(skill)?.[1];
+  assert.ok(
+    marker && api.includes(`\n${marker}\n`),
+    'workspace-api.md has the section SKILL.md triggers on',
+  );
   assert.match(api, /Do not follow the\s+307 redirect/);
   assert.match(api, /Verify the response's region origin, path, and ID/);
   assert.match(api, /If-None-Match: \*/);
